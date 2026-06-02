@@ -160,7 +160,7 @@ html,body{overflow:hidden;}
 /* EXPORT */
 #screen-export{position:fixed;inset:0;background:#fff;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .2s;overflow-y:auto;z-index:30;}
 #screen-export.show{opacity:1;pointer-events:all;}
-.exp-wrap{max-width:740px;margin:0 auto;padding:2.5rem 2rem 4rem;}
+.exp-wrap{width:80vw;max-width:80vw;margin:0 auto;padding:2.5rem 2rem 4rem;}
 .exp-title{font-size:22px;font-weight:700;margin-bottom:4px;}
 .exp-sub{font-size:14px;color:var(--muted);margin-bottom:1.75rem;}
 .exp-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1.75rem;}
@@ -169,10 +169,28 @@ html,body{overflow:hidden;}
 .exp-stat-l{font-size:11px;color:var(--muted);margin-top:2px;}
 .exp-table-wrap{overflow-x:auto;border:.5px solid var(--faint-border);border-radius:var(--radius-lg);margin-bottom:1.75rem;}
 .exp-table{width:100%;border-collapse:collapse;font-size:12px;}
-.exp-table th{padding:8px 11px;font-weight:600;color:var(--muted);text-align:left;border-bottom:.5px solid var(--faint-border);background:var(--faint);white-space:nowrap;}
+.exp-table th{padding:8px 11px;font-weight:600;color:var(--muted);text-align:left;border-bottom:.5px solid var(--faint-border);background:var(--faint);white-space:nowrap;cursor:pointer;user-select:none;}
+.exp-table th:hover{color:var(--navy);background:var(--faint-border);}
+.exp-table th .sort-icon{font-size:1.3em;color:#000;vertical-align:middle;line-height:1;}
+.exp-table th.sort-asc .sort-icon::after{content:' ↑';}
+.exp-table th.sort-desc .sort-icon::after{content:' ↓';}
+.exp-table th:not(.sort-asc):not(.sort-desc) .sort-icon::after{content:' ↕';opacity:0.3;}
 .exp-table td{padding:8px 11px;border-bottom:.5px solid var(--faint-border);}
 .exp-table tr:last-child td{border-bottom:none;}
 .exp-actions{display:flex;gap:9px;flex-wrap:wrap;}
+.sort-hint{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-bottom:8px;}
+/* ── Searchable select (entreprise cible) ── */
+.csel{position:relative;min-width:160px;}
+.csel-val{padding:5px 22px 5px 8px;border:1px solid var(--faint-border-strong);border-radius:var(--radius);font-size:12px;cursor:pointer;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23122C43' opacity='.4'/%3E%3C/svg%3E") no-repeat right 7px center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--navy);}
+.csel-val:hover{border-color:var(--teal);}
+.csel-val.placeholder{color:var(--muted);}
+.csel-panel{position:fixed;z-index:9999;background:#fff;border:1px solid var(--faint-border-strong);border-radius:var(--radius-lg);box-shadow:0 8px 24px rgba(0,0,0,0.12);padding:8px;display:none;min-width:200px;}
+.csel-search{width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--faint-border);border-radius:var(--radius);font-size:12px;margin-bottom:6px;outline:none;font-family:var(--font);}
+.csel-search:focus{border-color:var(--teal);}
+.csel-list{max-height:180px;overflow-y:auto;}
+.csel-opt{padding:6px 8px;font-size:12px;border-radius:var(--radius);cursor:pointer;color:var(--navy);}
+.csel-opt:hover{background:var(--teal-bg);}
+.csel-opt.selected{font-weight:600;background:rgba(85,214,222,0.15);}
 
 /* MODAL */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.32);display:flex;align-items:center;justify-content:center;z-index:50;opacity:0;pointer-events:none;transition:opacity .2s;}
@@ -358,6 +376,10 @@ html,body{overflow:hidden;}
       <button class="btn btn-neutral btn-sm" onclick="hideExport()">← Retour</button>
     </div>
     <div class="exp-stats" id="expStats"></div>
+    <div class="sort-hint">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l4-4 4 4M7 5v14M21 15l-4 4-4-4M17 19V5"/></svg>
+      Cliquez sur un en-tête de colonne pour trier — un second clic inverse l'ordre.
+    </div>
     <div class="exp-table-wrap"><table class="exp-table" id="expTable"><thead></thead><tbody></tbody></table></div>
     <div class="exp-actions">
       <button class="btn btn-primary" onclick="downloadAll()">Télécharger les éléments</button>
@@ -690,7 +712,7 @@ function handleFiles(list) {
   if(limit.totalExceeded) showBatchLimitPopup(`Limite de ${TOTAL_LIMIT} factures atteinte : seuls ${limit.accepted} fichier(s) ont été ajoutés.`);
   const firstBatch = S.invoices.length===0 && accepted.length>0;
   const duplicates=[];
-  accepted.forEach(f=>{ if(S.files.find(x=>x.name===f.name)){duplicates.push(f.name);}else{S.files.push(f);S.invoices.push({file:f,status:'pending',data:{},errors:{},confidence:null,rawNorm:{},debtorType:null});}});
+  accepted.forEach(f=>{ if(S.files.find(x=>x.name===f.name)){duplicates.push(f.name);}else{S.files.push(f);S.invoices.push({file:f,status:'pending',data:{},errors:{},confidence:null,rawNorm:{},debtorType:null,targetCompany:null,paytStep:null,paytStatus:null,amountPaid:null});}});
   if(duplicates.length) showDupToast(duplicates);
   if (!accepted.length) return;
   if (firstBatch) {
@@ -1122,6 +1144,183 @@ async function reExtract(){
 }
 
 /* ══ EXPORT ═════════════════════════════════════════ */
+const EXP_COLS=[
+  {label:'Type',              key:'_type',                         type:'text'},
+  {label:'Débiteur',          key:'_debtor',                       type:'text'},
+  {label:'N° de facture',     key:'invoice_number',                type:'text'},
+  {label:'Date émission',     key:'invoice_date',                  type:'date'},
+  {label:'Date échéance',     key:'invoice_due_date',              type:'date'},
+  {label:'Montant TTC',       key:'invoice_total_amount_inc_vat',  type:'number'},
+  {label:'Montant en suspens',key:'invoice_open_amount_inc_vat',   type:'number'},
+  {label:'Montant déjà payé (€)', key:'_amount_paid', type:'input'},
+  {label:'Étape PAYT',        key:'_payt_step',   type:'select', options:['RELANCES','DERNIÈRE RELANCE','RECOUVREMENT','À INITIER','EN RECOUVREMENT'], field:'paytStep'},
+  {label:'Statut paiement',  key:'_payt_status', type:'select', options:['Clôturée','Payée'], field:'paytStatus'},
+  {label:'Entreprise cible',  key:'_target_company',               type:'select'},
+];
+let expSort={key:null,dir:'asc'};
+
+function getExpRows(){
+  return S.invoices.map(inv=>({
+    _status:   inv.status==='validated'?'Validée':'Ignorée',
+    _type:     inv.debtorType==='entreprise'?'B2B':inv.debtorType==='particulier'?'B2C':'—',
+    _debtor:   computeDebtorCompanyName(inv.data)||inv.data.debtor_lastname||'—',
+    invoice_number: String(inv.data.invoice_number||'—'),
+    invoice_date:   String(inv.data.invoice_date||'—'),
+    invoice_due_date: String(inv.data.invoice_due_date||'—'),
+    invoice_total_amount_inc_vat: inv.data.invoice_total_amount_inc_vat??'—',
+    invoice_open_amount_inc_vat:  inv.data.invoice_open_amount_inc_vat??'—',
+    _amount_paid: inv.amountPaid ?? '',
+    _payt_step:   inv.paytStep   || '—',
+    _payt_status: inv.paytStatus || '—',
+    _target_company: inv.targetCompany ? inv.targetCompany.name : '—',
+    _inv: inv,
+  }));
+}
+
+function sortExpRows(rows){
+  if(!expSort.key) return rows;
+  const col=EXP_COLS.find(c=>c.key===expSort.key);
+  return [...rows].sort((a,b)=>{
+    let av=a[expSort.key],bv=b[expSort.key];
+    if(av==='—'&&bv!=='—') return 1;
+    if(bv==='—'&&av!=='—') return -1;
+    if(av==='—'&&bv==='—') return 0;
+    let cmp=0;
+    if(col.type==='number'){cmp=parseFloat(String(av).replace(',','.'))||0;cmp-=parseFloat(String(bv).replace(',','.'))||0;}
+    else if(col.type==='date'){cmp=String(av).localeCompare(String(bv));}
+    else{cmp=String(av).toLowerCase().localeCompare(String(bv).toLowerCase());}
+    return expSort.dir==='asc'?cmp:-cmp;
+  });
+}
+
+function renderExpTable(){
+  const thead=document.querySelector('#expTable thead'),tbody=document.querySelector('#expTable tbody');
+  thead.innerHTML='<tr>'+EXP_COLS.map(col=>{
+    const cls=expSort.key===col.key?(expSort.dir==='asc'?'sort-asc':'sort-desc'):'';
+    const noSort=col.type==='select'?'pointer-events:none;cursor:default;':'' ;
+    return `<th class="${cls}" style="${noSort}" onclick="${col.type!=='select'?`toggleExpSort('${col.key}')`:''}">` +
+      `${esc(col.label)}${col.type!=='select'?'<span class="sort-icon"></span>':''}</th>`;
+  }).join('')+'</tr>';
+  tbody.innerHTML='';
+  const rows=sortExpRows(getExpRows());
+  rows.forEach(row=>{
+    const inv=row._inv;
+    const invIdx=S.invoices.indexOf(inv);
+    const tr=document.createElement('tr');
+    if(inv.status==='validated') tr.style.cssText='background:var(--teal-bg);';
+    const statusBadge=`<span class="badge ${inv.status==='validated'?'b-ok':'b-warn'}">${esc(row._status)}</span>`;
+    tr.innerHTML=EXP_COLS.map(col=>{
+      if(col.key==='_amount_paid'){
+        const v=row._inv.amountPaid??'';
+        return `<td style="min-width:110px;"><div style="display:flex;align-items:center;gap:4px;">`+
+          `<input type="number" min="0" step="0.01" value="${esc(String(v))}" placeholder="0.00" `+
+          `style="width:80px;padding:4px 6px;border:1px solid var(--faint-border-strong);border-radius:var(--radius);font-size:12px;font-family:var(--font);text-align:right;" `+
+          `onchange="setAmountPaid(${invIdx},this.value)" onblur="setAmountPaid(${invIdx},this.value)">`+
+          `<span style="font-size:12px;color:var(--muted);">€</span></div></td>`;
+      }
+      if(col.type==='select'&&col.key!=='_target_company') return renderCselSimple(invIdx,col,row[col.key]);
+      if(col.key==='_target_company'){
+        const cur=inv.targetCompany;
+        const valLabel=cur?esc(cur.name):'Choisir…';
+        const valCls=cur?'':'placeholder';
+        const opts=paytAdministrations.map(a=>
+          `<div class="csel-opt${cur&&cur.id===a.id?' selected':''}" data-name="${esc(a.name)}" ` +
+          `onclick="pickCsel(event,${invIdx},'${a.id}','${a.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">`+
+          `${esc(a.name)}${a.city?` <span style="color:var(--muted);font-size:11px;">— ${esc(a.city)}</span>`:''}</div>`
+        ).join('');
+        const noData=paytAdministrations.length===0?`<div style="font-size:12px;color:var(--muted);padding:6px 8px;">Aucune entreprise disponible</div>`:'';
+        return `<td style="min-width:180px;"><div class="csel">` +
+          `<div class="csel-val ${valCls}" onclick="openCsel(event,this)">${valLabel}</div>` +
+          `<div class="csel-panel">` +
+          `<input class="csel-search" placeholder="Rechercher…" oninput="filterCsel(this)">` +
+          `<div class="csel-list">${noData}${opts}</div></div></div></td>`;
+      }
+      const v=row[col.key];
+      const isNum=col.type==='number'&&v!=='—';
+      return `<td${isNum?' style="text-align:right;font-variant-numeric:tabular-nums;"':''}>${esc(String(v))}</td>`;
+    }).join('');
+    tbody.appendChild(tr);
+  });
+}
+
+function toggleExpSort(key){
+  if(expSort.key===key){expSort.dir=expSort.dir==='asc'?'desc':'asc';}
+  else{expSort.key=key;expSort.dir='asc';}
+  renderExpTable();
+}
+
+/* ── Searchable select (entreprise cible) ── */
+let paytAdministrations=[];
+let _openCselPanel=null;
+
+function openCsel(e,valEl){
+  e.stopPropagation();
+  const panel=valEl.nextElementSibling;
+  if(_openCselPanel&&_openCselPanel!==panel){_openCselPanel.style.display='none';}
+  if(panel.style.display==='block'){panel.style.display='none';_openCselPanel=null;return;}
+  const rect=valEl.getBoundingClientRect();
+  panel.style.top=(rect.bottom+4)+'px';
+  panel.style.left=rect.left+'px';
+  panel.style.width=Math.max(rect.width,220)+'px';
+  panel.style.display='block';
+  _openCselPanel=panel;
+  const s=panel.querySelector('.csel-search');
+  s.value='';filterCsel(s);s.focus();
+}
+function filterCsel(input){
+  const q=input.value.toLowerCase();
+  input.closest('.csel-panel').querySelectorAll('.csel-opt').forEach(o=>{
+    o.style.display=o.dataset.name.toLowerCase().includes(q)?'':'none';
+  });
+}
+function pickCsel(e,invIdx,adminId,adminName){
+  e.stopPropagation();
+  S.invoices[invIdx].targetCompany={id:adminId,name:adminName};
+  saveDataset();
+  if(_openCselPanel){_openCselPanel.style.display='none';_openCselPanel=null;}
+  renderExpTable();
+}
+function pickCselSimple(e,invIdx,field,value){
+  e.stopPropagation();
+  S.invoices[invIdx][field]=value;
+  saveDataset();
+  if(_openCselPanel){_openCselPanel.style.display='none';_openCselPanel=null;}
+  renderExpTable();
+}
+function setAmountPaid(invIdx,value){
+  const v=parseFloat(value);
+  S.invoices[invIdx].amountPaid=isNaN(v)?null:v;
+  saveDataset();
+}
+function renderCselSimple(invIdx,col,currentValue){
+  const cur=currentValue!=='—'?currentValue:null;
+  const isStatus=col.key==='_payt_status';
+  const minW=isStatus?'112px':'140px';
+  const icon=cur&&isStatus
+    ?(cur==='Payée'
+      ?`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M20 6L9 17l-5-5"/></svg>`
+      :`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M18 6L6 18M6 6l12 12"/></svg>`)
+    :'';
+  const displayLabel=cur
+    ?`<span style="display:flex;align-items:center;gap:5px;">${icon}${esc(cur)}</span>`
+    :'Choisir…';
+  const opts=col.options.map(o=>{
+    const optIcon=isStatus
+      ?(o==='Payée'
+        ?`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`
+        :`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>`)
+      :'';
+    return `<div class="csel-opt${cur===o?' selected':''}" data-name="${esc(o)}" onclick="pickCselSimple(event,${invIdx},'${col.field}','${o.replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:6px;">${optIcon}${esc(o)}</div>`;
+  }).join('');
+  return `<td style="min-width:${minW};"><div class="csel">`+
+    `<div class="csel-val${cur?'':' placeholder'}" onclick="openCsel(event,this)">${displayLabel}</div>`+
+    `<div class="csel-panel"><input class="csel-search" placeholder="Rechercher…" oninput="filterCsel(this)"><div class="csel-list">${opts}</div></div>`+
+    `</div></td>`;
+}
+document.addEventListener('click',()=>{
+  if(_openCselPanel){_openCselPanel.style.display='none';_openCselPanel=null;}
+});
+
 function showExport(){
   const val=S.invoices.filter(i=>i.status==='validated');
   const skip=S.invoices.filter(i=>i.status==='skipped');
@@ -1129,24 +1328,8 @@ function showExport(){
     <div class="exp-stat"><div class="exp-stat-n">${S.invoices.length}</div><div class="exp-stat-l">Total</div></div>
     <div class="exp-stat"><div class="exp-stat-n" style="color:var(--teal-text);">${val.length}</div><div class="exp-stat-l">Validées</div></div>
     <div class="exp-stat"><div class="exp-stat-n" style="color:var(--amber-text);">${skip.length}</div><div class="exp-stat-l">Ignorées</div></div>`;
-  // N° TVA débiteur is never exported — debtor_code already carries that value for B2B
-  const activeVAT=VAT_FIELDS.filter(f=>f.key!=='debtor_vat_number'&&val.some(inv=>inv.data[f.key]));
-  const exportFields=[...S.fields,...activeVAT,{key:'debtor_code',label:'Code débiteur'}];
-  const thead=document.querySelector('#expTable thead'),tbody=document.querySelector('#expTable tbody');
-  thead.innerHTML='<tr>'+['#','Statut','Type','Fichier',...exportFields.map(f=>f.label)].map(h=>`<th>${esc(h)}</th>`).join('')+'</tr>';
-  tbody.innerHTML='';
-  S.invoices.forEach((inv,idx)=>{
-    const tr=document.createElement('tr');
-    if(inv.status==='validated') tr.style.cssText='background:var(--teal-bg);';
-    const statusBadge=`<span class="badge ${inv.status==='validated'?'b-ok':'b-warn'}">${inv.status==='validated'?'Validée':'Ignorée'}</span>`;
-    const typeLabel=inv.debtorType==='entreprise'?'B2B':inv.debtorType==='particulier'?'B2C':'—';
-    tr.innerHTML=`<td style="color:var(--text2);font-size:11px;">${idx+1}</td>`
-      +`<td>${statusBadge}</td>`
-      +`<td style="font-size:11px;">${esc(typeLabel)}</td>`
-      +`<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(inv.file.name)}</td>`
-      +exportFields.map(f=>`<td>${esc(String(inv.data[f.key]??'—'))}</td>`).join('');
-    tbody.appendChild(tr);
-  });
+  expSort={key:null,dir:'asc'};
+  renderExpTable();
   document.getElementById('screen-export').classList.add('show');
 }
 function hideExport(){document.getElementById('screen-export').classList.remove('show');}
@@ -1368,8 +1551,9 @@ if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https:
     const res = await fetch('/api/payt-administrations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
     const data = await res.json().catch(()=>({}));
     if(!res.ok || !data.administrations) return;
+    paytAdministrations = [...data.administrations].sort((a,b)=>a.name.localeCompare(b.name,'fr'));
     const ol = document.getElementById('companiesList');
-    ol.innerHTML = data.administrations.map(a=>`<li>${esc(a.name)}${a.city ? ' — '+esc(a.city) : ''}</li>`).join('');
+    ol.innerHTML = paytAdministrations.map(a=>`<li>${esc(a.name)}${a.city ? ' — '+esc(a.city) : ''}</li>`).join('');
   } catch(e){}
 })();
 /* ══ DATASET SAVE / RESTORE ══════════════════════════ */
@@ -1378,7 +1562,7 @@ function saveDataset(){
     const snap=S.invoices.map(inv=>({
       fileName:inv.file.name,status:inv.status,data:inv.data,
       errors:inv.errors,confidence:inv.confidence,rawNorm:inv.rawNorm,debtorType:inv.debtorType,
-      repaired:inv.repaired||false
+      repaired:inv.repaired||false,targetCompany:inv.targetCompany||null,paytStep:inv.paytStep||null,paytStatus:inv.paytStatus||null,amountPaid:inv.amountPaid??null
     }));
     localStorage.setItem('factuscan_dataset',JSON.stringify(snap));
   }catch(e){}
@@ -1395,7 +1579,7 @@ function restoreDataset(){
       const stubFile={name:d.fileName,type:'application/pdf',arrayBuffer:()=>Promise.resolve(new ArrayBuffer(0))};
       S.files.push(stubFile);
       S.invoices.push({file:stubFile,status:d.status,data:d.data,errors:d.errors,
-        confidence:d.confidence,rawNorm:d.rawNorm,debtorType:d.debtorType,repaired:d.repaired});
+        confidence:d.confidence,rawNorm:d.rawNorm,debtorType:d.debtorType,repaired:d.repaired,targetCompany:d.targetCompany||null,paytStep:d.paytStep||null,paytStatus:d.paytStatus||null,amountPaid:d.amountPaid??null});
     });
     document.getElementById('screen-upload').classList.add('out');
     setTimeout(()=>{
