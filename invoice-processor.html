@@ -239,6 +239,13 @@ html,body{overflow:hidden;}
     <div class="dz-limit">Maximum 20 fichiers à la fois</div>
   </div>
   <input type="file" id="fi1" multiple accept=".pdf" style="display:none;" onchange="handleFiles(this.files)"/>
+  <div id="restoreBtn" style="display:none;margin-top:1rem;width:min(500px,90vw);">
+    <button onclick="restoreDataset()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:13px 20px;background:rgba(255,255,255,0.75);backdrop-filter:blur(12px);border:1.5px solid var(--teal);border-radius:var(--radius-lg);cursor:pointer;font-family:var(--font);font-size:14px;font-weight:600;color:var(--navy);transition:background .15s;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+      <span id="restoreLabel">Charger le dataset sauvegardé</span>
+      <button onclick="event.stopPropagation();clearDataset()" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--muted);font-size:11px;font-family:var(--font);padding:0;" title="Effacer">✕ Effacer</button>
+    </button>
+  </div>
   <div style="margin-top:1.5rem;width:min(500px,90vw);background:#122C43;border-radius:var(--radius-lg);padding:14px 16px;display:flex;align-items:flex-start;gap:12px;">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;margin-top:2px;" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -251,13 +258,6 @@ html,body{overflow:hidden;}
         <li style="display:flex;align-items:center;gap:6px;"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#55D6DE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h8M7 3l3 3-3 3"/></svg>10 minutes d'inactivité s'écoulent</li>
       </ul>
       Aucune facture ni aucune donnée n'est conservée par le serveur après traitement.
-    </div>
-  </div>
-  <div id="restoreBar" style="display:none;margin-top:1rem;width:min(500px,90vw);background:rgba(85,214,222,0.12);border:1px solid rgba(85,214,222,0.35);border-radius:var(--radius-lg);padding:12px 16px;display:none;align-items:center;justify-content:space-between;gap:12px;">
-    <span id="restoreLabel" style="font-size:13px;color:var(--navy);font-weight:500;"></span>
-    <div style="display:flex;gap:8px;flex-shrink:0;">
-      <button class="btn btn-primary" style="padding:6px 14px;font-size:12px;" onclick="restoreDataset()">Restaurer</button>
-      <button class="btn" style="padding:6px 14px;font-size:12px;" onclick="clearDataset()">Effacer</button>
     </div>
   </div>
 </div>
@@ -1385,7 +1385,7 @@ function saveDataset(){
 }
 function clearDataset(){
   localStorage.removeItem('factuscan_dataset');
-  document.getElementById('restoreBar').style.display='none';
+  document.getElementById('restoreBtn').style.display='none';
 }
 function restoreDataset(){
   try{
@@ -1409,9 +1409,8 @@ function restoreDataset(){
   try{
     const snap=JSON.parse(localStorage.getItem('factuscan_dataset')||'[]');
     if(!snap.length) return;
-    const bar=document.getElementById('restoreBar');
-    document.getElementById('restoreLabel').textContent=`Session précédente — ${snap.length} facture${snap.length>1?'s':''} sauvegardée${snap.length>1?'s':''}`;
-    bar.style.display='flex';
+    document.getElementById('restoreLabel').textContent=`Reprendre la session — ${snap.length} facture${snap.length>1?'s':''} sauvegardée${snap.length>1?'s':''}`;
+    document.getElementById('restoreBtn').style.display='block';
   }catch(e){}
 })();
 if(sessionStorage.getItem('adminAuth')==='1'){
