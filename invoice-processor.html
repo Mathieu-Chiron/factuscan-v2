@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FactuScan</title>
+<title>FactuScan V2</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'><path d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z' stroke='%2355D6DE' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/><circle cx='12' cy='12' r='3' stroke='%2355D6DE' stroke-width='2.5'/></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -222,8 +222,12 @@ html,body{overflow:hidden;}
 
 <!-- ═══ UPLOAD ════════════════════════════════════ -->
 <div id="screen-upload" class="z-content">
-  <div class="dz-title"><svg style="display:inline-block;vertical-align:middle;margin-right:10px;margin-bottom:3px" width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2.5"/></svg>FactuScan<svg style="display:inline-block;vertical-align:middle;margin-left:10px;margin-bottom:3px" width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2.5"/></svg></div>
+  <div class="dz-title">FactuScan V2</div>
   <div class="dz-sub">Uploadez vos factures, vérifiez les données extraites, obtenez les fichiers prêts à importer.</div>
+  <div id="companiesBox" style="margin-bottom:1.5rem;width:min(500px,90vw);border:1px solid blue;border-radius:var(--radius-lg);padding:16px 20px;background:rgba(255,255,255,0.65);backdrop-filter:blur(12px);">
+    <h3 style="font-size:15px;font-weight:700;color:var(--navy);margin:0 0 10px;">Liste de vos entreprises connectées par API</h3>
+    <ol id="companiesList" style="margin:0;padding-left:20px;font-size:13px;color:var(--navy);line-height:1.8;"></ol>
+  </div>
   <div class="dropzone" id="dropzone"
     onclick="document.getElementById('fi1').click()"
     ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
@@ -247,6 +251,13 @@ html,body{overflow:hidden;}
         <li style="display:flex;align-items:center;gap:6px;"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#55D6DE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h8M7 3l3 3-3 3"/></svg>10 minutes d'inactivité s'écoulent</li>
       </ul>
       Aucune facture ni aucune donnée n'est conservée par le serveur après traitement.
+    </div>
+  </div>
+  <div id="restoreBar" style="display:none;margin-top:1rem;width:min(500px,90vw);background:rgba(85,214,222,0.12);border:1px solid rgba(85,214,222,0.35);border-radius:var(--radius-lg);padding:12px 16px;display:none;align-items:center;justify-content:space-between;gap:12px;">
+    <span id="restoreLabel" style="font-size:13px;color:var(--navy);font-weight:500;"></span>
+    <div style="display:flex;gap:8px;flex-shrink:0;">
+      <button class="btn btn-primary" style="padding:6px 14px;font-size:12px;" onclick="restoreDataset()">Restaurer</button>
+      <button class="btn" style="padding:6px 14px;font-size:12px;" onclick="clearDataset()">Effacer</button>
     </div>
   </div>
 </div>
@@ -1079,7 +1090,7 @@ function validateInvoice(){
     if(firstErrKey){const el=document.getElementById('fi_'+firstErrKey);if(el) el.scrollIntoView({behavior:'smooth',block:'center'});}
     return;
   }
-  inv.status='validated';renderFieldsUI(inv);renderSidebar();renderBadges(inv);updateBar();
+  inv.status='validated';renderFieldsUI(inv);renderSidebar();renderBadges(inv);updateBar();saveDataset();
   const allDone=S.invoices.length>0&&S.invoices.every(x=>x.status==='validated'||x.status==='skipped');
   if(allDone){
     const btn=document.getElementById('btnValidate');
@@ -1092,7 +1103,7 @@ function validateInvoice(){
 
 function skipInvoice(){
   if(S.cur===-1) return;
-  S.invoices[S.cur].status='skipped';renderSidebar();updateBar();
+  S.invoices[S.cur].status='skipped';renderSidebar();updateBar();saveDataset();
   const next=S.invoices.findIndex((x,i)=>i>S.cur&&(x.status==='extracted'||x.status==='error'));
   if(next>=0) selectInv(next);
 }
@@ -1350,6 +1361,59 @@ function clearSession(){
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function toB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Lecture échouée'));r.readAsDataURL(f);});}
 if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+(async function loadCompanies(){
+  const token = sessionStorage.getItem('paytToken');
+  if(!token) return;
+  try {
+    const res = await fetch('/api/payt-administrations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok || !data.administrations) return;
+    const ol = document.getElementById('companiesList');
+    ol.innerHTML = data.administrations.map(a=>`<li>${esc(a.name)}${a.city ? ' — '+esc(a.city) : ''}</li>`).join('');
+  } catch(e){}
+})();
+/* ══ DATASET SAVE / RESTORE ══════════════════════════ */
+function saveDataset(){
+  try{
+    const snap=S.invoices.map(inv=>({
+      fileName:inv.file.name,status:inv.status,data:inv.data,
+      errors:inv.errors,confidence:inv.confidence,rawNorm:inv.rawNorm,debtorType:inv.debtorType,
+      repaired:inv.repaired||false
+    }));
+    localStorage.setItem('factuscan_dataset',JSON.stringify(snap));
+  }catch(e){}
+}
+function clearDataset(){
+  localStorage.removeItem('factuscan_dataset');
+  document.getElementById('restoreBar').style.display='none';
+}
+function restoreDataset(){
+  try{
+    const snap=JSON.parse(localStorage.getItem('factuscan_dataset')||'[]');
+    if(!snap.length) return;
+    snap.forEach(d=>{
+      const stubFile={name:d.fileName,type:'application/pdf',arrayBuffer:()=>Promise.resolve(new ArrayBuffer(0))};
+      S.files.push(stubFile);
+      S.invoices.push({file:stubFile,status:d.status,data:d.data,errors:d.errors,
+        confidence:d.confidence,rawNorm:d.rawNorm,debtorType:d.debtorType,repaired:d.repaired});
+    });
+    document.getElementById('screen-upload').classList.add('out');
+    setTimeout(()=>{
+      document.getElementById('screen-upload').style.display='none';
+      document.getElementById('screen-main').classList.add('in');
+      renderSidebar();selectInv(0);updateBar();
+    },280);
+  }catch(e){}
+}
+(function initRestoreBar(){
+  try{
+    const snap=JSON.parse(localStorage.getItem('factuscan_dataset')||'[]');
+    if(!snap.length) return;
+    const bar=document.getElementById('restoreBar');
+    document.getElementById('restoreLabel').textContent=`Session précédente — ${snap.length} facture${snap.length>1?'s':''} sauvegardée${snap.length>1?'s':''}`;
+    bar.style.display='flex';
+  }catch(e){}
+})();
 if(sessionStorage.getItem('adminAuth')==='1'){
   document.getElementById('btnSettings').style.display='';
 }
