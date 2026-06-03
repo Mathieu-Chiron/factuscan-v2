@@ -916,10 +916,33 @@ function renderFieldsUI(inv) {
   renderDebtorSection(inv,c);
 }
 
-function inv_setAmountPaid(value){
-  const v=parseFloat(value);
-  S.invoices[S.cur].amountPaid=isNaN(v)?null:v;
+function applyAmountPaid(inv, value){
+  const paid = parseFloat(value);
+  // Freeze the original open amount on first use so we can always compute from it
+  if(inv.baseOpenAmount == null){
+    const base = parseFloat(inv.data.invoice_open_amount_inc_vat);
+    inv.baseOpenAmount = isNaN(base) ? 0 : base;
+  }
+  if(isNaN(paid) || paid <= 0){
+    // Clear: restore original open amount
+    inv.amountPaid = null;
+    inv.data.invoice_open_amount_inc_vat = inv.baseOpenAmount;
+    if(inv.paytStatus === 'Payée') inv.paytStatus = null;
+  } else {
+    inv.amountPaid = paid;
+    const newOpen = Math.max(0, Math.round((inv.baseOpenAmount - paid) * 100) / 100);
+    inv.data.invoice_open_amount_inc_vat = newOpen;
+    if(newOpen === 0) inv.paytStatus = 'Payée';
+  }
   saveDataset();
+}
+
+function inv_setAmountPaid(value){
+  const inv = S.invoices[S.cur];
+  applyAmountPaid(inv, value);
+  // Update the open amount field in place without full re-render
+  const openInput = document.getElementById('fi_invoice_open_amount_inc_vat');
+  if(openInput) openInput.value = inv.data.invoice_open_amount_inc_vat;
 }
 
 function renderDebtorSection(inv,container){
@@ -1402,9 +1425,8 @@ function pickCselSimple(e,invIdx,field,value){
   renderExpTable();
 }
 function setAmountPaid(invIdx,value){
-  const v=parseFloat(value);
-  S.invoices[invIdx].amountPaid=isNaN(v)?null:v;
-  saveDataset();
+  applyAmountPaid(S.invoices[invIdx], value);
+  renderExpTable();
 }
 function renderCselSimple(invIdx,col,currentValue){
   const cur=currentValue!=='—'?currentValue:null;
@@ -1757,7 +1779,7 @@ function saveDataset(){
     const snap=S.invoices.map(inv=>({
       fileName:inv.file.name,status:inv.status,data:inv.data,
       errors:inv.errors,confidence:inv.confidence,rawNorm:inv.rawNorm,debtorType:inv.debtorType,
-      repaired:inv.repaired||false,targetCompany:inv.targetCompany||null,paytStep:inv.paytStep||null,paytStatus:inv.paytStatus||null,amountPaid:inv.amountPaid??null
+      repaired:inv.repaired||false,targetCompany:inv.targetCompany||null,paytStep:inv.paytStep||null,paytStatus:inv.paytStatus||null,amountPaid:inv.amountPaid??null,baseOpenAmount:inv.baseOpenAmount??null
     }));
     localStorage.setItem('factuscan_dataset',JSON.stringify(snap));
   }catch(e){}
@@ -1774,7 +1796,7 @@ function restoreDataset(){
       const stubFile={name:d.fileName,type:'application/pdf',arrayBuffer:()=>Promise.resolve(new ArrayBuffer(0))};
       S.files.push(stubFile);
       S.invoices.push({file:stubFile,status:d.status,data:d.data,errors:d.errors,
-        confidence:d.confidence,rawNorm:d.rawNorm,debtorType:d.debtorType,repaired:d.repaired,targetCompany:d.targetCompany||null,paytStep:d.paytStep||null,paytStatus:d.paytStatus||null,amountPaid:d.amountPaid??null});
+        confidence:d.confidence,rawNorm:d.rawNorm,debtorType:d.debtorType,repaired:d.repaired,targetCompany:d.targetCompany||null,paytStep:d.paytStep||null,paytStatus:d.paytStatus||null,amountPaid:d.amountPaid??null,baseOpenAmount:d.baseOpenAmount??null});
     });
     document.getElementById('screen-upload').classList.add('out');
     setTimeout(()=>{
