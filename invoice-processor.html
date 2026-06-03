@@ -94,6 +94,8 @@ html,body{overflow:hidden;}
 .fields-scroll{flex:1;overflow-y:auto;padding:18px 18px 0;}
 .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:8px;color:var(--muted);font-size:13px;}
 .field-row{margin-bottom:14px;}
+.field-group{border:1px solid #122C43;border-radius:var(--radius-lg);padding:14px 14px 2px;margin-bottom:16px;}
+.field-group-title{font-size:10px;font-weight:700;color:#122C43;text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px;}
 .field-lbl{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;display:flex;align-items:center;gap:3px;}
 .req{color:var(--red);}
 .input:disabled{opacity:0.4;cursor:not-allowed;background:var(--faint);}
@@ -179,6 +181,8 @@ html,body{overflow:hidden;}
 .exp-table tr:last-child td{border-bottom:none;}
 .exp-actions{display:flex;gap:9px;flex-wrap:wrap;}
 .sort-hint{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-bottom:8px;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.push-summary{display:none;margin-top:10px;font-size:13px;padding:10px 14px;border-radius:var(--radius);}
 /* ── Searchable select (entreprise cible) ── */
 .csel{position:relative;min-width:160px;}
 .csel-val{padding:5px 22px 5px 8px;border:1px solid var(--faint-border-strong);border-radius:var(--radius);font-size:12px;cursor:pointer;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23122C43' opacity='.4'/%3E%3C/svg%3E") no-repeat right 7px center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--navy);}
@@ -376,6 +380,15 @@ html,body{overflow:hidden;}
       <button class="btn btn-neutral btn-sm" onclick="hideExport()">← Retour</button>
     </div>
     <div class="exp-stats" id="expStats"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      <button class="btn btn-sm" id="btnSetPayee" onclick="bulkSetStatus('Payée')" style="background:rgba(50,192,130,0.12);border-color:rgba(50,192,130,0.4);color:#085041;font-size:12px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:middle;"><path d="M20 6L9 17l-5-5"/></svg>Enregistrer comme Payées
+      </button>
+      <button class="btn btn-sm" id="btnSetCloturee" onclick="bulkSetStatus('Clôturée')" style="background:rgba(217,31,44,0.06);border-color:rgba(217,31,44,0.25);color:var(--red);font-size:12px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:middle;"><path d="M18 6L6 18M6 6l12 12"/></svg>Enregistrer comme Clôturées
+      </button>
+      <span id="selCount" style="font-size:12px;color:var(--muted);margin-left:4px;"></span>
+    </div>
     <div class="sort-hint">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l4-4 4 4M7 5v14M21 15l-4 4-4-4M17 19V5"/></svg>
       Cliquez sur un en-tête de colonne pour trier — un second clic inverse l'ordre.
@@ -383,8 +396,10 @@ html,body{overflow:hidden;}
     <div class="exp-table-wrap"><table class="exp-table" id="expTable"><thead></thead><tbody></tbody></table></div>
     <div class="exp-actions">
       <button class="btn btn-primary" onclick="downloadAll()">Télécharger les éléments</button>
+      <button class="btn btn-primary" id="btnPushPayt" onclick="pushToPayt()" style="background:var(--navy);border-color:var(--navy);">Envoyer vers PAYT</button>
       <button class="btn btn-neutral" onclick="confirmRestart()">Nouvelle session</button>
     </div>
+    <div class="push-summary" id="pushSummary"></div>
     <div style="margin-top:1.25rem;padding:14px 16px;background:rgba(85,214,222,0.08);border:1px solid rgba(85,214,222,0.30);border-radius:var(--radius-lg);font-size:13px;color:var(--navy);line-height:1.6;">
       💡 En téléchargeant les éléments vous allez obtenir un fichier <strong>.zip</strong> contenant vos factures PDF renommées + un fichier <strong>CSV</strong>. Ces 2 documents sont nécessaires pour réaliser une importation manuelle sur Payt.
     </div>
@@ -820,6 +835,15 @@ function renderDebtorCode(inv){
 
 function renderFieldsUI(inv) {
   const c=document.getElementById('fieldsContent');c.innerHTML='';
+
+  const GROUP_DEBTOR=['debtor_lastname','debtor_post_street_1','debtor_post_postalcode','debtor_post_city','debtor_post_country_code','debtor_email'];
+  const GROUP_INVOICE=['invoice_number','invoice_date','invoice_due_date','invoice_total_amount_inc_vat','invoice_open_amount_inc_vat'];
+
+  const groupDebtor=document.createElement('div');groupDebtor.className='field-group';
+  groupDebtor.innerHTML='<div class="field-group-title">Débiteur</div>';
+  const groupInvoice=document.createElement('div');groupInvoice.className='field-group';
+  groupInvoice.innerHTML='<div class="field-group-title">Facture</div>';
+
   S.fields.forEach(f=>{
     const raw=inv.data[f.key],val=raw!=null?String(raw):'';
     const err=inv.errors?.[f.key],wasNorm=inv.rawNorm?.[f.key]===true;
@@ -848,8 +872,13 @@ function renderFieldsUI(inv) {
       ${err?`<div class="field-err" style="color:var(--amber-text);">${esc(err)}</div>`:''}
       ${wasNorm&&!err?'<div class="field-hint">Normalisée automatiquement</div>':''}
     `;
-    c.appendChild(row);
+    if(GROUP_DEBTOR.includes(f.key)) groupDebtor.appendChild(row);
+    else if(GROUP_INVOICE.includes(f.key)) groupInvoice.appendChild(row);
+    else c.appendChild(row);
   });
+
+  c.appendChild(groupDebtor);
+  c.appendChild(groupInvoice);
   renderDebtorSection(inv,c);
 }
 
@@ -1145,6 +1174,8 @@ async function reExtract(){
 
 /* ══ EXPORT ═════════════════════════════════════════ */
 const EXP_COLS=[
+  {label:'_chk',              key:'_checkbox',                     type:'checkbox'},
+  {label:'',                  key:'_push_status',                  type:'push'},
   {label:'Type',              key:'_type',                         type:'text'},
   {label:'Débiteur',          key:'_debtor',                       type:'text'},
   {label:'N° de facture',     key:'invoice_number',                type:'text'},
@@ -1153,7 +1184,6 @@ const EXP_COLS=[
   {label:'Montant TTC',       key:'invoice_total_amount_inc_vat',  type:'number'},
   {label:'Montant en suspens',key:'invoice_open_amount_inc_vat',   type:'number'},
   {label:'Montant déjà payé (€)', key:'_amount_paid', type:'input'},
-  {label:'Étape PAYT',        key:'_payt_step',   type:'select', options:['RELANCES','DERNIÈRE RELANCE','RECOUVREMENT','À INITIER','EN RECOUVREMENT'], field:'paytStep'},
   {label:'Statut paiement',  key:'_payt_status', type:'select', options:['Clôturée','Payée'], field:'paytStatus'},
   {label:'Entreprise cible',  key:'_target_company',               type:'select'},
 ];
@@ -1170,7 +1200,7 @@ function getExpRows(){
     invoice_total_amount_inc_vat: inv.data.invoice_total_amount_inc_vat??'—',
     invoice_open_amount_inc_vat:  inv.data.invoice_open_amount_inc_vat??'—',
     _amount_paid: inv.amountPaid ?? '',
-    _payt_step:   inv.paytStep   || '—',
+    _push_status: inv.pushStatus || null,
     _payt_status: inv.paytStatus || '—',
     _target_company: inv.targetCompany ? inv.targetCompany.name : '—',
     _inv: inv,
@@ -1195,11 +1225,15 @@ function sortExpRows(rows){
 
 function renderExpTable(){
   const thead=document.querySelector('#expTable thead'),tbody=document.querySelector('#expTable tbody');
+  const allRows=getExpRows();
+  const allChecked=allRows.length>0&&allRows.every((_,i)=>selectedInvoices.has(S.invoices.indexOf(allRows[i]._inv)));
   thead.innerHTML='<tr>'+EXP_COLS.map(col=>{
+    if(col.key==='_checkbox') return `<th style="width:32px;text-align:center;padding:8px 6px;cursor:default;">` +
+      `<input type="checkbox" ${allChecked?'checked':''} onchange="toggleSelectAll(this.checked)" style="width:14px;height:14px;cursor:pointer;accent-color:var(--teal);"></th>`;
+    const noInteract=col.type==='select'||col.type==='push';
     const cls=expSort.key===col.key?(expSort.dir==='asc'?'sort-asc':'sort-desc'):'';
-    const noSort=col.type==='select'?'pointer-events:none;cursor:default;':'' ;
-    return `<th class="${cls}" style="${noSort}" onclick="${col.type!=='select'?`toggleExpSort('${col.key}')`:''}">` +
-      `${esc(col.label)}${col.type!=='select'?'<span class="sort-icon"></span>':''}</th>`;
+    return `<th class="${cls}" style="${noInteract?'pointer-events:none;cursor:default;':''}" onclick="${!noInteract?`toggleExpSort('${col.key}')`:''}">` +
+      `${esc(col.label)}${!noInteract?'<span class="sort-icon"></span>':''}</th>`;
   }).join('')+'</tr>';
   tbody.innerHTML='';
   const rows=sortExpRows(getExpRows());
@@ -1210,6 +1244,20 @@ function renderExpTable(){
     if(inv.status==='validated') tr.style.cssText='background:var(--teal-bg);';
     const statusBadge=`<span class="badge ${inv.status==='validated'?'b-ok':'b-warn'}">${esc(row._status)}</span>`;
     tr.innerHTML=EXP_COLS.map(col=>{
+      if(col.key==='_checkbox'){
+        const checked=selectedInvoices.has(invIdx);
+        return `<td style="width:32px;text-align:center;padding:8px 6px;">` +
+          `<input type="checkbox" ${checked?'checked':''} onchange="toggleInvSelect(${invIdx},this.checked)" ` +
+          `style="width:14px;height:14px;cursor:pointer;accent-color:var(--teal);"></td>`;
+      }
+      if(col.key==='_push_status'){
+        const ps=row._inv.pushStatus;
+        let icon='<span style="display:inline-block;width:16px;"></span>';
+        if(ps==='sending') icon=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
+        else if(ps==='success') icon=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`;
+        else if(ps==='error') icon=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" title="${esc(row._inv.pushError||'')}"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
+        return `<td style="width:24px;text-align:center;padding:8px 6px;">${icon}</td>`;
+      }
       if(col.key==='_amount_paid'){
         const v=row._inv.amountPaid??'';
         return `<td style="min-width:110px;"><div style="display:flex;align-items:center;gap:4px;">`+
@@ -1246,6 +1294,32 @@ function renderExpTable(){
 function toggleExpSort(key){
   if(expSort.key===key){expSort.dir=expSort.dir==='asc'?'desc':'asc';}
   else{expSort.key=key;expSort.dir='asc';}
+  renderExpTable();
+}
+
+/* ── Checkbox selection ── */
+let selectedInvoices=new Set();
+
+function toggleInvSelect(invIdx,checked){
+  if(checked) selectedInvoices.add(invIdx);
+  else selectedInvoices.delete(invIdx);
+  updateSelCount();
+  renderExpTable();
+}
+function toggleSelectAll(checked){
+  if(checked) S.invoices.forEach((_,i)=>selectedInvoices.add(i));
+  else selectedInvoices.clear();
+  updateSelCount();
+  renderExpTable();
+}
+function updateSelCount(){
+  const n=selectedInvoices.size;
+  document.getElementById('selCount').textContent=n>0?`${n} facture${n>1?'s':''} sélectionnée${n>1?'s':''}` :'';
+}
+function bulkSetStatus(value){
+  if(!selectedInvoices.size){alert('Sélectionnez au moins une facture.');return;}
+  selectedInvoices.forEach(i=>{if(S.invoices[i]) S.invoices[i].paytStatus=value;});
+  saveDataset();
   renderExpTable();
 }
 
@@ -1329,10 +1403,91 @@ function showExport(){
     <div class="exp-stat"><div class="exp-stat-n" style="color:var(--teal-text);">${val.length}</div><div class="exp-stat-l">Validées</div></div>
     <div class="exp-stat"><div class="exp-stat-n" style="color:var(--amber-text);">${skip.length}</div><div class="exp-stat-l">Ignorées</div></div>`;
   expSort={key:null,dir:'asc'};
+  selectedInvoices.clear();
+  updateSelCount();
   renderExpTable();
   document.getElementById('screen-export').classList.add('show');
 }
 function hideExport(){document.getElementById('screen-export').classList.remove('show');}
+
+/* ══ PUSH TO PAYT ════════════════════════════════════ */
+async function pushToPayt(){
+  const token=sessionStorage.getItem('paytToken');
+  if(!token){alert('Token PAYT manquant. Reconnectez-vous via /payt-connect.html');return;}
+
+  const toSend=S.invoices.filter(inv=>
+    inv.status==='validated' && inv.targetCompany && inv.pushStatus!=='success'
+  );
+  if(!toSend.length){
+    alert('Aucune facture validée avec une entreprise cible à envoyer.');return;
+  }
+  const missing=toSend.filter(inv=>!inv.targetCompany);
+  if(missing.length){
+    if(!confirm(`${missing.length} facture(s) n'ont pas d'entreprise cible et seront ignorées. Continuer ?`)) return;
+  }
+
+  const btn=document.getElementById('btnPushPayt');
+  btn.disabled=true;btn.textContent='Envoi en cours…';
+
+  // Mark all as sending
+  toSend.forEach(inv=>{inv.pushStatus='sending';inv.pushError=null;});
+  renderExpTable();
+
+  const payload=toSend.map(inv=>{
+    const debtorCode=computeDebtorCode(inv.data);
+    return {
+      administration_id:              inv.targetCompany.id,
+      invoice_number:                 inv.data.invoice_number,
+      invoice_date:                   inv.data.invoice_date,
+      invoice_due_date:               inv.data.invoice_due_date,
+      invoice_total_amount_inc_vat:   inv.data.invoice_total_amount_inc_vat,
+      invoice_open_amount_inc_vat:    inv.data.invoice_open_amount_inc_vat,
+      currency_code:                  'EUR',
+      flow_code:                      inv.paytStep||null,
+      debtor_number:                  debtorCode,
+      debtor_name:                    computeDebtorCompanyName(inv.data)||inv.data.debtor_lastname||debtorCode,
+      debtor_identifier:              debtorCode,
+      debtor_country_code:            inv.data.debtor_post_country_code||null,
+      debtor_vat_number:              inv.data.debtor_vat_number||null,
+      debtor_is_company:              inv.debtorType==='entreprise',
+    };
+  });
+
+  try{
+    const res=await fetch('/api/payt-push',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token,invoices:payload}),
+    });
+    const data=await res.json().catch(()=>({}));
+    const results=data.results||{};
+
+    let ok=0,errors=0;
+    toSend.forEach(inv=>{
+      const r=results[inv.data.invoice_number];
+      if(!r){inv.pushStatus='error';inv.pushError='Pas de réponse';errors++;return;}
+      if(r.success){inv.pushStatus='success';ok++;}
+      else{inv.pushStatus='error';inv.pushError=(r.errors||[]).join(' | ');errors++;}
+    });
+    saveDataset();
+    renderExpTable();
+
+    const summary=document.getElementById('pushSummary');
+    summary.style.display='block';
+    if(errors===0){
+      summary.style.cssText='display:block;margin-top:10px;font-size:13px;padding:10px 14px;border-radius:var(--radius);background:rgba(50,192,130,0.10);border:1px solid rgba(50,192,130,0.30);color:#085041;';
+      summary.textContent=`${ok} facture${ok>1?'s':''} envoyée${ok>1?'s':''} avec succès vers PAYT.`;
+    } else {
+      summary.style.cssText='display:block;margin-top:10px;font-size:13px;padding:10px 14px;border-radius:var(--radius);background:rgba(217,31,44,0.06);border:1px solid rgba(217,31,44,0.20);color:var(--red);';
+      summary.textContent=`${ok} succès, ${errors} erreur${errors>1?'s':''}. Survolez les ✗ pour voir le détail.`;
+    }
+  }catch(e){
+    toSend.forEach(inv=>{inv.pushStatus='error';inv.pushError='Erreur réseau';});
+    renderExpTable();
+  }finally{
+    btn.disabled=false;btn.textContent='Envoyer vers PAYT';
+  }
+}
 
 function snName(s){return s.replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,'_').slice(0,80);}
 function fmtDate(date){return String(date||'').slice(0,4);}
