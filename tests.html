@@ -1013,6 +1013,366 @@ html.push(runSuite('debtor_is_company — mix B2B et B2C', [
     fn: invoices => buildCSVForSchema(invoices, ['debtor_is_company']) },
 ]));
 
+/* ══ applyAmountPaid — Montant déjà payé ══ */
+
+// no-op stub (saveDataset does localStorage I/O, not needed in tests)
+function saveDataset() {}
+
+function applyAmountPaid(inv, value) {
+  const paid = parseFloat(value);
+  if (inv.baseOpenAmount == null) {
+    const base = parseFloat(inv.data.invoice_open_amount_inc_vat);
+    inv.baseOpenAmount = isNaN(base) ? 0 : base;
+  }
+  if (isNaN(paid) || paid <= 0) {
+    inv.amountPaid = null;
+    inv.data.invoice_open_amount_inc_vat = inv.baseOpenAmount;
+    if (inv.paytStatus === 'Payée') inv.paytStatus = null;
+  } else {
+    inv.amountPaid = paid;
+    const newOpen = Math.max(0, Math.round((inv.baseOpenAmount - paid) * 100) / 100);
+    inv.data.invoice_open_amount_inc_vat = newOpen;
+    if (newOpen === 0) inv.paytStatus = 'Payée';
+  }
+  saveDataset();
+}
+
+function mkInvPA(openAmt, baseOpen = null, paytStatus = null) {
+  return { data: { invoice_open_amount_inc_vat: openAmt }, amountPaid: null, baseOpenAmount: baseOpen, paytStatus };
+}
+
+html.push('<h2>Montant déjà payé — applyAmountPaid</h2>');
+html.push(runSuite('Calcul du montant en suspens', [
+  { desc: 'Paiement partiel réduit le montant en suspens',
+    input: { openAmt: 500, paid: 200 }, expected: 300,
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); return i.data.invoice_open_amount_inc_vat; } },
+  { desc: 'Paiement total → suspens = 0',
+    input: { openAmt: 500, paid: 500 }, expected: 0,
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); return i.data.invoice_open_amount_inc_vat; } },
+  { desc: 'Paiement total → statut "Payée" automatique',
+    input: { openAmt: 500, paid: 500 }, expected: 'Payée',
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); return i.paytStatus; } },
+  { desc: 'Paiement partiel → statut non modifié (pas Payée)',
+    input: { openAmt: 500, paid: 200 }, expected: null,
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); return i.paytStatus; } },
+  { desc: 'Surpaiement → suspens = 0, jamais négatif',
+    input: { openAmt: 100, paid: 999 }, expected: 0,
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); return i.data.invoice_open_amount_inc_vat; } },
+  { desc: 'Surpaiement → statut "Payée"',
+    input: { openAmt: 100, paid: 999 }, expected: 'Payée',
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); return i.paytStatus; } },
+  { desc: 'amountPaid stocké sur la facture',
+    input: { openAmt: 500, paid: 200 }, expected: 200,
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); return i.amountPaid; } },
+  { desc: 'Arrondi centimes — €1500,99 − €1000,50 = €500,49',
+    input: { openAmt: 1500.99, paid: 1000.50 }, expected: 500.49,
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); return i.data.invoice_open_amount_inc_vat; } },
+]));
+
+html.push(runSuite('Réinitialisation du montant payé', [
+  { desc: 'Valeur 0 → reset, suspens restauré',
+    input: { openAmt: 500, paid: 200, reset: 0 }, expected: 500,
+    fn: ({ openAmt, paid, reset }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); applyAmountPaid(i, reset); return i.data.invoice_open_amount_inc_vat; } },
+  { desc: 'Valeur vide → reset, suspens restauré',
+    input: { openAmt: 500, paid: 200 }, expected: 500,
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); applyAmountPaid(i, ''); return i.data.invoice_open_amount_inc_vat; } },
+  { desc: 'Valeur négative → reset',
+    input: { openAmt: 500, paid: -100 }, expected: 500,
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); return i.data.invoice_open_amount_inc_vat; } },
+  { desc: 'Reset après paiement complet → statut "Payée" effacé',
+    input: { openAmt: 500, paid: 500 }, expected: null,
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); applyAmountPaid(i, 0); return i.paytStatus; } },
+  { desc: 'amountPaid remis à null après reset',
+    input: { openAmt: 500, paid: 200 }, expected: null,
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); applyAmountPaid(i, 0); return i.amountPaid; } },
+]));
+
+html.push(runSuite('baseOpenAmount — gel à la première application', [
+  { desc: 'Initialisé depuis invoice_open_amount_inc_vat au premier appel',
+    input: { openAmt: 1000, paid: 200 }, expected: 1000,
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); return i.baseOpenAmount; } },
+  { desc: 'Non modifié lors d\'un second appel (valeur différente)',
+    input: { openAmt: 1000, paid1: 200, paid2: 300 }, expected: 1000,
+    fn: ({ openAmt, paid1, paid2 }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid1); applyAmountPaid(i, paid2); return i.baseOpenAmount; } },
+  { desc: 'Second paiement calcule depuis baseOpenAmount, pas le résidu',
+    input: { openAmt: 1000, paid1: 200, paid2: 300 }, expected: 700,
+    fn: ({ openAmt, paid1, paid2 }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid1); applyAmountPaid(i, paid2); return i.data.invoice_open_amount_inc_vat; } },
+  { desc: 'baseOpenAmount déjà défini → non réécrasé',
+    input: { openAmt: 500, presetBase: 1000, paid: 200 }, expected: 1000,
+    fn: ({ openAmt, presetBase, paid }) => { const i = mkInvPA(openAmt, presetBase); applyAmountPaid(i, paid); return i.baseOpenAmount; } },
+  { desc: 'base invalide (NaN) → baseOpenAmount = 0',
+    input: { openAmt: 'N/A', paid: 50 }, expected: 0,
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); return i.baseOpenAmount; } },
+  { desc: 'base invalide + paiement → suspens = 0 (pas négatif)',
+    input: { openAmt: 'N/A', paid: 50 }, expected: 0,
+    fn: ({ openAmt, paid }) => { const i = mkInvPA(openAmt); applyAmountPaid(i, paid); return i.data.invoice_open_amount_inc_vat; } },
+]));
+
+
+/* ══ DEBTOR CODE HELPERS ══ */
+
+const EU_VAT_PATTERNS_T = {
+  AT:/^ATU[0-9]{8}$/,BE:/^BE[0-9]{10}$/,BG:/^BG[0-9]{9,10}$/,HR:/^HR[0-9]{11}$/,
+  CY:/^CY[0-9]{8}[A-Z]$/,CZ:/^CZ[0-9]{8,10}$/,DK:/^DK[0-9]{8}$/,EE:/^EE[0-9]{9}$/,
+  FI:/^FI[0-9]{8}$/,FR:/^FR[0-9A-Z]{2}[0-9]{9}$/,DE:/^DE[0-9]{9}$/,GR:/^EL[0-9]{9}$/,
+  HU:/^HU[0-9]{8}$/,IE:/^IE[0-9]{7}[A-Z]{1,2}$/,IT:/^IT[0-9]{11}$/,LV:/^LV[0-9]{11}$/,
+  LT:/^LT([0-9]{9}|[0-9]{12})$/,LU:/^LU[0-9]{8}$/,MT:/^MT[0-9]{8}$/,
+  NL:/^NL[0-9]{9}B[0-9]{2}$/,PL:/^PL[0-9]{10}$/,PT:/^PT[0-9]{9}$/,RO:/^RO[0-9]{2,10}$/,
+  SK:/^SK[0-9]{10}$/,SI:/^SI[0-9]{8}$/,ES:/^ES[A-Z0-9][0-9]{7}[A-Z0-9]$/,
+  SE:/^SE[0-9]{12}$/,GB:/^GB([0-9]{9}|[0-9]{12}|GD[0-9]{3}|HA[0-9]{3})$/,CH:/^CHE[0-9]{9}$/,
+};
+function isValidVAT_T(str){if(!str||typeof str!=='string')return false;const s=str.replace(/[\s.\-]/g,'').toUpperCase();return Object.values(EU_VAT_PATTERNS_T).some(p=>p.test(s));}
+function normalizeVAT_T(raw){if(!raw)return null;const s=String(raw).replace(/[\s.\-]/g,'').toUpperCase();return isValidVAT_T(s)?s:null;}
+function resolveVATAssignment_T(cV,dV){const c=cV?normalizeVAT_T(cV):null;const d=dV?normalizeVAT_T(dV):null;if(c&&d)return 'both';if(c)return 'creditor_only';if(d)return 'debtor_only';return 'none';}
+const DEBTOR_CODE_SOURCES_T=['debtor_lastname','debtor_post_city','debtor_post_street_1','debtor_post_postalcode'];
+function extractCode_T(str,n=3){if(!str)return 'X'.repeat(n);const s=String(str).toUpperCase().replace(/[^A-Z0-9]/g,'');return(s.slice(0,n)||'').padEnd(n,'X');}
+function generateDebtorCode_T(data){return DEBTOR_CODE_SOURCES_T.map(k=>extractCode_T(data[k],3)).join('');}
+function computeDebtorCode_T(data){const vs=resolveVATAssignment_T(data.creditor_vat_number,data.debtor_vat_number);if(vs==='both'||vs==='debtor_only')return normalizeVAT_T(data.debtor_vat_number);return generateDebtorCode_T(data);}
+function computeDebtorCompanyName_T(data){const parts=[data.debtor_firstname,data.debtor_infix,data.debtor_lastname].filter(v=>v&&String(v).trim());return parts.join(' ');}
+
+html.push('<h2>extractCode — génération du code débiteur</h2>');
+html.push(runSuite('extractCode(str, 3)', [
+  { desc: 'Nom standard → 3 premières lettres majuscules',  input: 'DUPONT',          expected: 'DUP', fn: s => extractCode_T(s, 3) },
+  { desc: 'Minuscules → converties en majuscules',           input: 'dupont',          expected: 'DUP', fn: s => extractCode_T(s, 3) },
+  { desc: 'Caractères non-alphanumériques supprimés',        input: 'A-B C',           expected: 'ABC', fn: s => extractCode_T(s, 3) },
+  { desc: '2 chars → complété avec X → "ABX"',              input: 'AB',              expected: 'ABX', fn: s => extractCode_T(s, 3) },
+  { desc: '1 char → "AXX"',                                  input: 'A',              expected: 'AXX', fn: s => extractCode_T(s, 3) },
+  { desc: 'Chaîne vide → "XXX"',                             input: '',               expected: 'XXX', fn: s => extractCode_T(s, 3) },
+  { desc: 'null → "XXX"',                                    input: null,             expected: 'XXX', fn: s => extractCode_T(s, 3) },
+  { desc: 'Chiffres acceptés',                               input: '123456',         expected: '123', fn: s => extractCode_T(s, 3) },
+  { desc: 'Plus de 3 chars → tronqué à 3',                  input: 'DUPONTIN',       expected: 'DUP', fn: s => extractCode_T(s, 3) },
+  { desc: 'Adresse avec numéro → alphanum uniquement',       input: '12 rue de la Paix', expected: '12R', fn: s => extractCode_T(s, 3) },
+]));
+
+html.push(runSuite('generateDebtorCode (4 sources × 3 chars = 12 chars)', [
+  { desc: 'Toutes sources renseignées',
+    input: { debtor_lastname: 'DUPONT', debtor_post_city: 'PARIS', debtor_post_street_1: '12 rue de la Paix', debtor_post_postalcode: '75001' },
+    expected: 'DUPPAR12R750',
+    fn: data => generateDebtorCode_T(data) },
+  { desc: 'Sources nulles → XXX pour chaque manquante',
+    input: { debtor_lastname: 'DUPONT', debtor_post_city: null, debtor_post_street_1: null, debtor_post_postalcode: '75001' },
+    expected: 'DUPXXXXXX750',
+    fn: data => generateDebtorCode_T(data) },
+  { desc: 'Toutes sources manquantes → XXXXXXXXXXXX',
+    input: {},
+    expected: 'XXXXXXXXXXXX',
+    fn: data => generateDebtorCode_T(data) },
+]));
+
+html.push(runSuite('computeDebtorCode — stratégie VAT vs nom+adresse', [
+  { desc: 'Pas de TVA → code généré depuis les sources',
+    input: { debtor_lastname: 'DUPONT', debtor_post_city: 'PARIS', debtor_post_street_1: '12 rue de la Paix', debtor_post_postalcode: '75001' },
+    expected: 'DUPPAR12R750',
+    fn: data => computeDebtorCode_T(data) },
+  { desc: 'TVA débiteur présente → numéro TVA normalisé',
+    input: { debtor_vat_number: 'FR12345678901', debtor_lastname: 'DUPONT', debtor_post_city: 'PARIS', debtor_post_street_1: '12R', debtor_post_postalcode: '75001' },
+    expected: 'FR12345678901',
+    fn: data => computeDebtorCode_T(data) },
+  { desc: 'Les deux TVAs présentes → TVA débiteur prioritaire',
+    input: { creditor_vat_number: 'BE0123456789', debtor_vat_number: 'FR12345678901', debtor_lastname: 'DUPONT', debtor_post_city: 'PARIS', debtor_post_street_1: '12R', debtor_post_postalcode: '75001' },
+    expected: 'FR12345678901',
+    fn: data => computeDebtorCode_T(data) },
+  { desc: 'Seule TVA créancier → code généré (la TVA créancier n\'est PAS utilisée)',
+    input: { creditor_vat_number: 'FR12345678901', debtor_lastname: 'DUPONT', debtor_post_city: 'PARIS', debtor_post_street_1: '12 rue', debtor_post_postalcode: '75001' },
+    expected: 'DUPPAR12R750',
+    fn: data => computeDebtorCode_T(data) },
+  { desc: 'TVA débiteur avec tirets/espaces → normalisée (tirets supprimés)',
+    input: { debtor_vat_number: 'FR 12 345 678 901', debtor_lastname: 'X', debtor_post_city: 'X', debtor_post_street_1: 'X', debtor_post_postalcode: 'X' },
+    expected: 'FR12345678901',
+    fn: data => computeDebtorCode_T(data) },
+]));
+
+html.push('<h2>computeDebtorCompanyName — nom du débiteur</h2>');
+html.push(runSuite('Composition du nom', [
+  { desc: 'Prénom + Nom → joint par espace',
+    input: { debtor_firstname: 'Jean', debtor_infix: null, debtor_lastname: 'Dupont' },
+    expected: 'Jean Dupont',
+    fn: data => computeDebtorCompanyName_T(data) },
+  { desc: 'Prénom + Particule + Nom',
+    input: { debtor_firstname: 'Jean', debtor_infix: 'de', debtor_lastname: 'Dupont' },
+    expected: 'Jean de Dupont',
+    fn: data => computeDebtorCompanyName_T(data) },
+  { desc: 'Nom seul',
+    input: { debtor_firstname: null, debtor_infix: null, debtor_lastname: 'Dupont' },
+    expected: 'Dupont',
+    fn: data => computeDebtorCompanyName_T(data) },
+  { desc: 'Prénom seul',
+    input: { debtor_firstname: 'Jean', debtor_infix: null, debtor_lastname: null },
+    expected: 'Jean',
+    fn: data => computeDebtorCompanyName_T(data) },
+  { desc: 'Tous vides → chaîne vide',
+    input: { debtor_firstname: null, debtor_infix: null, debtor_lastname: null },
+    expected: '',
+    fn: data => computeDebtorCompanyName_T(data) },
+  { desc: 'Champs absents (objet vide) → chaîne vide',
+    input: {},
+    expected: '',
+    fn: data => computeDebtorCompanyName_T(data) },
+  { desc: 'Particule seule ignorée (sans prénom ni nom)',
+    input: { debtor_firstname: null, debtor_infix: 'de', debtor_lastname: null },
+    expected: 'de',
+    fn: data => computeDebtorCompanyName_T(data) },
+]));
+
+
+/* ══ PAYT PUSH PAYLOAD — field mapping ══ */
+
+// Mirrors the invoice object built in pushToPayt() in invoice-processor.html
+function buildFrontendPaytPayload_T(inv) {
+  const debtorCode = computeDebtorCode_T(inv.data);
+  return {
+    administration_id:            inv.targetCompany.id,
+    invoice_number:               inv.data.invoice_number,
+    invoice_date:                 inv.data.invoice_date,
+    invoice_due_date:             inv.data.invoice_due_date,
+    invoice_total_amount_inc_vat: inv.data.invoice_total_amount_inc_vat,
+    invoice_open_amount_inc_vat:  inv.data.invoice_open_amount_inc_vat,
+    currency_code:                'EUR',
+    debtor_number:                debtorCode,
+    debtor_name:                  computeDebtorCompanyName_T(inv.data) || inv.data.debtor_lastname || debtorCode,
+    debtor_identifier:            debtorCode,
+    debtor_country_code:          inv.data.debtor_post_country_code || null,
+    debtor_vat_number:            inv.data.debtor_vat_number || null,
+    debtor_is_company:            inv.debtorType === 'entreprise',
+  };
+}
+
+// Mirrors the invoice mapping in api/payt-push.js (what gets sent to PAYT)
+function buildApiPaytBody_T(inv) {
+  return {
+    debtor_number:     inv.debtor_number,
+    invoice_number:    inv.invoice_number,
+    invoice_date:      inv.invoice_date,
+    due_date:          inv.invoice_due_date,
+    book_amount_total: String(inv.invoice_total_amount_inc_vat),
+    amount_total:      String(inv.invoice_total_amount_inc_vat),
+    book_amount_open:  String(inv.invoice_open_amount_inc_vat),
+    amount_open:       String(inv.invoice_open_amount_inc_vat),
+    currency_code:     inv.currency_code || 'EUR',
+  };
+}
+
+const sampleInvData = {
+  invoice_number: 'F-2024-001',
+  invoice_date: '2024-03-15',
+  invoice_due_date: '2024-04-15',
+  invoice_total_amount_inc_vat: 1500.5,
+  invoice_open_amount_inc_vat: 300.25,
+  debtor_lastname: 'Dupont',
+  debtor_firstname: 'Jean',
+  debtor_infix: null,
+  debtor_post_country_code: 'FR',
+  debtor_vat_number: null,
+  debtor_post_city: 'PARIS',
+  debtor_post_street_1: '12 rue',
+  debtor_post_postalcode: '75001',
+};
+
+html.push('<h2>PAYT push payload — champs envoyés vers l\'API PAYT</h2>');
+html.push(runSuite('api/payt-push.js — renommage des champs montants', [
+  { desc: 'book_amount_total = String(invoice_total_amount_inc_vat)',
+    input: { debtor_number: 'ABC', invoice_number: 'F-001', invoice_date: '2024-03-15', invoice_due_date: '2024-04-15', invoice_total_amount_inc_vat: 1500.5, invoice_open_amount_inc_vat: 300.25, currency_code: 'EUR' },
+    expected: '1500.5',
+    fn: inv => buildApiPaytBody_T(inv).book_amount_total },
+  { desc: 'amount_total = String(invoice_total_amount_inc_vat)',
+    input: { debtor_number: 'ABC', invoice_number: 'F-001', invoice_date: '2024-03-15', invoice_due_date: '2024-04-15', invoice_total_amount_inc_vat: 1500.5, invoice_open_amount_inc_vat: 300.25, currency_code: 'EUR' },
+    expected: '1500.5',
+    fn: inv => buildApiPaytBody_T(inv).amount_total },
+  { desc: 'book_amount_open = String(invoice_open_amount_inc_vat)',
+    input: { debtor_number: 'ABC', invoice_number: 'F-001', invoice_date: '2024-03-15', invoice_due_date: '2024-04-15', invoice_total_amount_inc_vat: 1500.5, invoice_open_amount_inc_vat: 300.25, currency_code: 'EUR' },
+    expected: '300.25',
+    fn: inv => buildApiPaytBody_T(inv).book_amount_open },
+  { desc: 'amount_open = String(invoice_open_amount_inc_vat)',
+    input: { debtor_number: 'ABC', invoice_number: 'F-001', invoice_date: '2024-03-15', invoice_due_date: '2024-04-15', invoice_total_amount_inc_vat: 1500.5, invoice_open_amount_inc_vat: 300.25, currency_code: 'EUR' },
+    expected: '300.25',
+    fn: inv => buildApiPaytBody_T(inv).amount_open },
+  { desc: 'due_date ← invoice_due_date (nom PAYT ≠ nom interne)',
+    input: { debtor_number: 'ABC', invoice_number: 'F-001', invoice_date: '2024-03-15', invoice_due_date: '2024-04-15', invoice_total_amount_inc_vat: 1500.5, invoice_open_amount_inc_vat: 300.25, currency_code: 'EUR' },
+    expected: '2024-04-15',
+    fn: inv => buildApiPaytBody_T(inv).due_date },
+  { desc: 'invoice_due_date absent du payload API (champ renommé)',
+    input: { debtor_number: 'ABC', invoice_number: 'F-001', invoice_date: '2024-03-15', invoice_due_date: '2024-04-15', invoice_total_amount_inc_vat: 1500.5, invoice_open_amount_inc_vat: 300.25, currency_code: 'EUR' },
+    expected: undefined,
+    fn: inv => buildApiPaytBody_T(inv).invoice_due_date },
+  { desc: 'total_amount absent du payload API (ancien nom supprimé)',
+    input: { debtor_number: 'ABC', invoice_number: 'F-001', invoice_date: '2024-03-15', invoice_due_date: '2024-04-15', invoice_total_amount_inc_vat: 1500.5, invoice_open_amount_inc_vat: 300.25, currency_code: 'EUR' },
+    expected: undefined,
+    fn: inv => buildApiPaytBody_T(inv).total_amount },
+  { desc: 'open_amount absent du payload API (ancien nom supprimé)',
+    input: { debtor_number: 'ABC', invoice_number: 'F-001', invoice_date: '2024-03-15', invoice_due_date: '2024-04-15', invoice_total_amount_inc_vat: 1500.5, invoice_open_amount_inc_vat: 300.25, currency_code: 'EUR' },
+    expected: undefined,
+    fn: inv => buildApiPaytBody_T(inv).open_amount },
+  { desc: 'flow_code absent du payload API (supprimé)',
+    input: { debtor_number: 'ABC', invoice_number: 'F-001', invoice_date: '2024-03-15', invoice_due_date: '2024-04-15', invoice_total_amount_inc_vat: 1500.5, invoice_open_amount_inc_vat: 300.25, currency_code: 'EUR' },
+    expected: undefined,
+    fn: inv => buildApiPaytBody_T(inv).flow_code },
+  { desc: 'currency_code par défaut = "EUR" si absent',
+    input: { debtor_number: 'ABC', invoice_number: 'F-001', invoice_date: '2024-03-15', invoice_due_date: '2024-04-15', invoice_total_amount_inc_vat: 100, invoice_open_amount_inc_vat: 100 },
+    expected: 'EUR',
+    fn: inv => buildApiPaytBody_T(inv).currency_code },
+]));
+
+html.push(runSuite('Montant en suspens après paiement partiel → transmis correctement', [
+  { desc: 'applyAmountPaid réduit invoice_open_amount_inc_vat avant envoi',
+    input: { openAmt: 1500, paid: 500 }, expected: 1000,
+    fn: ({ openAmt, paid }) => {
+      const i = mkInvPA(openAmt);
+      applyAmountPaid(i, paid);
+      // simulate what pushToPayt sends: the current (reduced) open amount
+      return i.data.invoice_open_amount_inc_vat;
+    } },
+  { desc: 'Montant réduit converti en string pour l\'API',
+    input: { openAmt: 1500, paid: 500 }, expected: '1000',
+    fn: ({ openAmt, paid }) => {
+      const i = mkInvPA(openAmt);
+      applyAmountPaid(i, paid);
+      return String(i.data.invoice_open_amount_inc_vat);
+    } },
+  { desc: 'Paiement total → "0" envoyé à PAYT',
+    input: { openAmt: 500, paid: 500 }, expected: '0',
+    fn: ({ openAmt, paid }) => {
+      const i = mkInvPA(openAmt);
+      applyAmountPaid(i, paid);
+      return String(i.data.invoice_open_amount_inc_vat);
+    } },
+]));
+
+html.push(runSuite('Payload frontend — structure et champs critiques', [
+  { desc: 'debtor_is_company = true pour une entreprise',
+    input: { data: sampleInvData, debtorType: 'entreprise', targetCompany: { id: 'ADM-1' } },
+    expected: true,
+    fn: inv => buildFrontendPaytPayload_T(inv).debtor_is_company },
+  { desc: 'debtor_is_company = false pour un particulier',
+    input: { data: sampleInvData, debtorType: 'particulier', targetCompany: { id: 'ADM-1' } },
+    expected: false,
+    fn: inv => buildFrontendPaytPayload_T(inv).debtor_is_company },
+  { desc: 'debtor_is_company = false si debtorType non défini',
+    input: { data: sampleInvData, debtorType: null, targetCompany: { id: 'ADM-1' } },
+    expected: false,
+    fn: inv => buildFrontendPaytPayload_T(inv).debtor_is_company },
+  { desc: 'administration_id transmis depuis targetCompany.id',
+    input: { data: sampleInvData, debtorType: 'particulier', targetCompany: { id: 'ADM-42' } },
+    expected: 'ADM-42',
+    fn: inv => buildFrontendPaytPayload_T(inv).administration_id },
+  { desc: 'debtor_number = computeDebtorCode (pas de TVA → généré)',
+    input: { data: sampleInvData, debtorType: 'particulier', targetCompany: { id: 'ADM-1' } },
+    expected: computeDebtorCode_T(sampleInvData),
+    fn: inv => buildFrontendPaytPayload_T(inv).debtor_number },
+  { desc: 'debtor_identifier = debtor_number (même valeur)',
+    input: { data: sampleInvData, debtorType: 'particulier', targetCompany: { id: 'ADM-1' } },
+    expected: true,
+    fn: inv => { const p = buildFrontendPaytPayload_T(inv); return p.debtor_identifier === p.debtor_number; } },
+  { desc: 'debtor_country_code transmis depuis les données',
+    input: { data: sampleInvData, debtorType: 'particulier', targetCompany: { id: 'ADM-1' } },
+    expected: 'FR',
+    fn: inv => buildFrontendPaytPayload_T(inv).debtor_country_code },
+  { desc: 'debtor_vat_number = null si non renseigné',
+    input: { data: sampleInvData, debtorType: 'particulier', targetCompany: { id: 'ADM-1' } },
+    expected: null,
+    fn: inv => buildFrontendPaytPayload_T(inv).debtor_vat_number },
+]));
+
+
 /* ══ ADMIN AUTH HELPERS ══ */
 
 // Mirror of sha256 from admin.html (sync wrapper for test purposes)

@@ -1735,6 +1735,121 @@ suite('vandn — champ email', ()=>{
   test('email invalide → message',      vandn('pasunemail',f).errs[0],             'Adresse e-mail invalide');
 });
 
+/* ══ applyAmountPaid — Montant déjà payé ══ */
+
+function saveDataset() {} // no-op stub
+
+function applyAmountPaid(inv, value) {
+  const paid = parseFloat(value);
+  if (inv.baseOpenAmount == null) {
+    const base = parseFloat(inv.data.invoice_open_amount_inc_vat);
+    inv.baseOpenAmount = isNaN(base) ? 0 : base;
+  }
+  if (isNaN(paid) || paid <= 0) {
+    inv.amountPaid = null;
+    inv.data.invoice_open_amount_inc_vat = inv.baseOpenAmount;
+    if (inv.paytStatus === 'Payée') inv.paytStatus = null;
+  } else {
+    inv.amountPaid = paid;
+    const newOpen = Math.max(0, Math.round((inv.baseOpenAmount - paid) * 100) / 100);
+    inv.data.invoice_open_amount_inc_vat = newOpen;
+    if (newOpen === 0) inv.paytStatus = 'Payée';
+  }
+  saveDataset();
+}
+
+function mkInvPA(openAmt, baseOpen = null, paytStatus = null) {
+  return { data: { invoice_open_amount_inc_vat: openAmt }, amountPaid: null, baseOpenAmount: baseOpen, paytStatus };
+}
+
+suite('applyAmountPaid — calcul du montant en suspens', () => {
+  let i;
+  i = mkInvPA(500); applyAmountPaid(i, 200);
+  test('paiement partiel réduit le suspens',             i.data.invoice_open_amount_inc_vat, 300);
+  i = mkInvPA(500); applyAmountPaid(i, 500);
+  test('paiement total → suspens = 0',                   i.data.invoice_open_amount_inc_vat, 0);
+  test('paiement total → paytStatus = "Payée"',          i.paytStatus, 'Payée');
+  i = mkInvPA(500); applyAmountPaid(i, 200);
+  test('paiement partiel → paytStatus inchangé (null)',  i.paytStatus, null);
+  i = mkInvPA(100); applyAmountPaid(i, 999);
+  test('surpaiement → suspens = 0 (jamais négatif)',     i.data.invoice_open_amount_inc_vat, 0);
+  test('surpaiement → paytStatus = "Payée"',             i.paytStatus, 'Payée');
+  i = mkInvPA(500); applyAmountPaid(i, 200);
+  test('amountPaid stocké sur la facture',               i.amountPaid, 200);
+  i = mkInvPA(1500.99); applyAmountPaid(i, 1000.50);
+  test('arrondi centimes — €1500,99 − €1000,50 = €500,49', i.data.invoice_open_amount_inc_vat, 500.49);
+});
+
+suite('applyAmountPaid — réinitialisation', () => {
+  let i;
+  i = mkInvPA(500); applyAmountPaid(i, 200); applyAmountPaid(i, 0);
+  test('valeur 0 → reset, suspens restauré',             i.data.invoice_open_amount_inc_vat, 500);
+  i = mkInvPA(500); applyAmountPaid(i, 200); applyAmountPaid(i, '');
+  test('valeur vide → reset, suspens restauré',          i.data.invoice_open_amount_inc_vat, 500);
+  i = mkInvPA(500); applyAmountPaid(i, -100);
+  test('valeur négative → reset',                        i.data.invoice_open_amount_inc_vat, 500);
+  i = mkInvPA(500); applyAmountPaid(i, 500); applyAmountPaid(i, 0);
+  test('reset après paiement complet → paytStatus effacé', i.paytStatus, null);
+  i = mkInvPA(500); applyAmountPaid(i, 200); applyAmountPaid(i, 0);
+  test('amountPaid remis à null après reset',            i.amountPaid, null);
+});
+
+suite('applyAmountPaid — gel du baseOpenAmount', () => {
+  let i;
+  i = mkInvPA(1000); applyAmountPaid(i, 200);
+  test('initialisé depuis invoice_open_amount_inc_vat',  i.baseOpenAmount, 1000);
+  i = mkInvPA(1000); applyAmountPaid(i, 200); applyAmountPaid(i, 300);
+  test('non modifié au second appel',                    i.baseOpenAmount, 1000);
+  test('second paiement depuis baseOpenAmount (pas résidu)', i.data.invoice_open_amount_inc_vat, 700);
+  i = mkInvPA(500, 1000); applyAmountPaid(i, 200);
+  test('baseOpenAmount pré-défini non réécrasé',         i.baseOpenAmount, 1000);
+  i = mkInvPA('N/A'); applyAmountPaid(i, 50);
+  test('base invalide (NaN) → baseOpenAmount = 0',       i.baseOpenAmount, 0);
+  test('base invalide + paiement → suspens = 0',         i.data.invoice_open_amount_inc_vat, 0);
+});
+
+
+/* ══ PAYT PUSH PAYLOAD — field mapping (api/payt-push.js) ══ */
+
+function buildApiPaytBody(inv) {
+  return {
+    debtor_number:     inv.debtor_number,
+    invoice_number:    inv.invoice_number,
+    invoice_date:      inv.invoice_date,
+    due_date:          inv.invoice_due_date,
+    book_amount_total: String(inv.invoice_total_amount_inc_vat),
+    amount_total:      String(inv.invoice_total_amount_inc_vat),
+    book_amount_open:  String(inv.invoice_open_amount_inc_vat),
+    amount_open:       String(inv.invoice_open_amount_inc_vat),
+    currency_code:     inv.currency_code || 'EUR',
+  };
+}
+
+suite('api/payt-push.js — renommage des champs montants', () => {
+  const inv = { debtor_number:'FR12345678901', invoice_number:'F-001', invoice_date:'2024-03-15', invoice_due_date:'2024-04-15', invoice_total_amount_inc_vat:1500.5, invoice_open_amount_inc_vat:300.25, currency_code:'EUR' };
+  const body = buildApiPaytBody(inv);
+  test('book_amount_total = String(total_amount_inc_vat)',  body.book_amount_total,    '1500.5');
+  test('amount_total = String(total_amount_inc_vat)',       body.amount_total,         '1500.5');
+  test('book_amount_open = String(open_amount_inc_vat)',    body.book_amount_open,     '300.25');
+  test('amount_open = String(open_amount_inc_vat)',         body.amount_open,          '300.25');
+  test('due_date ← invoice_due_date (renommé)',             body.due_date,             '2024-04-15');
+  test('invoice_due_date absent (champ renommé)',           body.invoice_due_date,     undefined);
+  test('total_amount absent (ancien nom supprimé)',         body.total_amount,         undefined);
+  test('open_amount absent (ancien nom supprimé)',          body.open_amount,          undefined);
+  test('flow_code absent (supprimé)',                       body.flow_code,            undefined);
+  const noCC = buildApiPaytBody({ ...inv, currency_code: undefined });
+  test('currency_code par défaut "EUR"',                    noCC.currency_code,        'EUR');
+});
+
+suite('PAYT — montant réduit après applyAmountPaid transmis correctement', () => {
+  let i;
+  i = mkInvPA(1500); applyAmountPaid(i, 500);
+  test('applyAmountPaid réduit invoice_open_amount_inc_vat', i.data.invoice_open_amount_inc_vat, 1000);
+  test('montant réduit converti en string pour l\'API',      String(i.data.invoice_open_amount_inc_vat), '1000');
+  i = mkInvPA(500); applyAmountPaid(i, 500);
+  test('paiement total → "0" envoyé à PAYT',                String(i.data.invoice_open_amount_inc_vat), '0');
+});
+
 console.log(`\n${'─'.repeat(50)}`);
 console.log(`✓ ${pass} passed   ${fail>0?'✗ '+fail+' failed':''}`);
 console.log('─'.repeat(50));
