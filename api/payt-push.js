@@ -11,7 +11,6 @@
 //     invoice_number, invoice_date, invoice_due_date,
 //     invoice_total_amount_inc_vat, invoice_open_amount_inc_vat,
 //     currency_code?,
-//     flow_code?,
 //     // debtor fields
 //     debtor_number, debtor_name, debtor_identifier,
 //     debtor_country_code?, debtor_vat_number?, debtor_is_company?,
@@ -89,14 +88,15 @@ export default async function handler(req, res) {
     const payload = {
       administration_id: administrationId,
       invoices: batch.map(inv => ({
-        debtor_number:  inv.debtor_number,
-        invoice_number: inv.invoice_number,
-        invoice_date:   inv.invoice_date,
-        due_date:       inv.invoice_due_date,
-        total_amount:   String(inv.invoice_total_amount_inc_vat),
-        open_amount:    String(inv.invoice_open_amount_inc_vat),
-        currency_code:  inv.currency_code || 'EUR',
-        ...(inv.flow_code && { flow_code: inv.flow_code }),
+        debtor_number:     inv.debtor_number,
+        invoice_number:    inv.invoice_number,
+        invoice_date:      inv.invoice_date,
+        due_date:          inv.invoice_due_date,
+        book_amount_total: String(inv.invoice_total_amount_inc_vat),
+        amount_total:      String(inv.invoice_total_amount_inc_vat),
+        book_amount_open:  String(inv.invoice_open_amount_inc_vat),
+        amount_open:       String(inv.invoice_open_amount_inc_vat),
+        currency_code:     inv.currency_code || 'EUR',
       })),
     };
 
