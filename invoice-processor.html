@@ -877,9 +877,49 @@ function renderFieldsUI(inv) {
     else c.appendChild(row);
   });
 
+  // ── Montant déjà payé ──
+  const amtRow=document.createElement('div');amtRow.className='field-row';
+  amtRow.innerHTML=`<div class="field-lbl">Montant déjà payé</div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <input type="number" min="0" step="0.01" class="field-input" id="fi_amount_paid"
+        value="${inv.amountPaid!=null?inv.amountPaid:''}" placeholder="0.00"
+        style="text-align:right;"
+        onchange="inv_setAmountPaid(this.value)" oninput="inv_setAmountPaid(this.value)"/>
+      <span style="font-size:13px;color:var(--muted);">€</span>
+    </div>`;
+  groupInvoice.appendChild(amtRow);
+
+  // ── Entreprise cible ──
+  const cur=inv.targetCompany;
+  const opts=paytAdministrations.map(a=>
+    `<div class="csel-opt${cur&&cur.id===a.id?' selected':''}" data-name="${esc(a.name)}"
+      onclick="pickCsel(event,${S.cur},'${a.id}','${a.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');renderFieldsUI(S.invoices[S.cur])">
+      ${esc(a.name)}${a.city?` <span style="color:var(--muted);font-size:11px;">— ${esc(a.city)}</span>`:''}</div>`
+  ).join('');
+  const noData=paytAdministrations.length===0
+    ?`<div style="font-size:12px;color:var(--muted);padding:6px 8px;">Aucune entreprise disponible</div>`:'';
+  const compRow=document.createElement('div');compRow.className='field-row';
+  compRow.innerHTML=`<div class="field-lbl">Entreprise cible</div>
+    <div class="csel">
+      <div class="csel-val${cur?'':' placeholder'}" onclick="openCsel(event,this)">
+        ${cur?esc(cur.name):'Choisir…'}
+      </div>
+      <div class="csel-panel">
+        <input class="csel-search" placeholder="Rechercher…" oninput="filterCsel(this)">
+        <div class="csel-list">${noData}${opts}</div>
+      </div>
+    </div>`;
+  groupInvoice.appendChild(compRow);
+
   c.appendChild(groupDebtor);
   c.appendChild(groupInvoice);
   renderDebtorSection(inv,c);
+}
+
+function inv_setAmountPaid(value){
+  const v=parseFloat(value);
+  S.invoices[S.cur].amountPaid=isNaN(v)?null:v;
+  saveDataset();
 }
 
 function renderDebtorSection(inv,container){
