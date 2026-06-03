@@ -1,20 +1,20 @@
 // api/payt-push.js
-// Pushes invoices (+ debtors) to PAYT in two batch steps:
-//   1. POST /v1/debtors  — upsert debtors (deduplicated)
-//   2. POST /v1/invoices — create invoices linked by debtor_number
+// Pushes invoices (+ contacts + debtors) to PAYT in three batch steps:
+//   1. POST /v1/contacts — upsert contacts with address (deduplicated by contact_identifier)
+//   2. POST /v1/debtors  — link contacts to administration as debtors
+//   3. POST /v1/invoices — create invoices linked by debtor_number
 //
 // Expected body:
 // {
 //   token: string,
 //   invoices: [{
-//     // invoice fields
 //     invoice_number, invoice_date, invoice_due_date,
 //     invoice_total_amount_inc_vat, invoice_open_amount_inc_vat,
 //     currency_code?,
-//     // debtor fields
 //     debtor_number, debtor_name, debtor_identifier,
-//     debtor_country_code?, debtor_vat_number?, debtor_is_company?,
-//     // target
+//     debtor_firstname?, debtor_infix?, debtor_lastname?,
+//     debtor_country_code?, debtor_post_street_1?, debtor_post_postalcode?,
+//     debtor_post_city?, debtor_email?, debtor_vat_number?, debtor_is_company?,
 //     administration_id
 //   }]
 // }
@@ -37,16 +37,64 @@ export default async function handler(req, res) {
   const results = {};
   invoices.forEach(inv => { results[inv.invoice_number] = { success: false, errors: [], warnings: [] }; });
 
-  // ── Step 1: upsert debtors (deduplicated by debtor_number per administration) ──
+  // ── Step 1: upsert contacts (deduplicated by contact_identifier per administration) ──
+  const contactsByAdmin = {};
+  invoices.forEach(inv => {
+    const aid = inv.administration_id;
+    if (!contactsByAdmin[aid]) contactsByAdmin[aid] = new Map();
+    const contactId = inv.debtor_identifier || inv.debtor_number;
+    if (!contactsByAdmin[aid].has(contactId)) {
+      contactsByAdmin[aid].set(contactId, {
+        contact_identifier: contactId,
+        // Name: use split fields if available, otherwise full name in lastname
+        lastname: inv.debtor_lastname || inv.debtor_name,
+        ...(inv.debtor_firstname && { firstname: inv.debtor_firstname }),
+        ...(inv.debtor_infix     && { infix:     inv.debtor_infix }),
+        // Address
+        ...(inv.debtor_post_street_1   && { postal_address_street_1:     inv.debtor_post_street_1 }),
+        ...(inv.debtor_post_postalcode && { postal_address_postal_code:  inv.debtor_post_postalcode }),
+        ...(inv.debtor_post_city       && { postal_address_city:         inv.debtor_post_city }),
+        ...(inv.debtor_country_code    && { postal_address_country_code: inv.debtor_country_code }),
+        // Email
+        ...(inv.debtor_email && { default_email_address: inv.debtor_email }),
+      });
+    }
+  });
+
+  for (const [administrationId, contactMap] of Object.entries(contactsByAdmin)) {
+    const payload = { administration_id: administrationId, contacts: [...contactMap.values()] };
+    try {
+      console.log('[payt-push] CONTACT payload:', JSON.stringify(payload));
+      const r = await fetch(`${PAYT_BASE}/v1/contacts`, { method: 'POST', headers, body: JSON.stringify(payload) });
+      const data = await r.json().catch(() => ({}));
+      console.log('[payt-push] CONTACT response', r.status, JSON.stringify(data));
+      if (!r.ok) {
+        invoices
+          .filter(inv => inv.administration_id === administrationId)
+          .forEach(inv => {
+            results[inv.invoice_number].errors.push(
+              `Erreur contact [${r.status}]: ${data?.error?.message || data?.message || 'Erreur inconnue'}`
+            );
+          });
+      }
+    } catch (e) {
+      invoices
+        .filter(inv => inv.administration_id === administrationId)
+        .forEach(inv => { results[inv.invoice_number].errors.push('Impossible de joindre PAYT (contacts)'); });
+    }
+  }
+
+  // ── Step 2: upsert debtors (deduplicated by debtor_number per administration) ──
   const debtorsByAdmin = {};
   invoices.forEach(inv => {
     const aid = inv.administration_id;
     if (!debtorsByAdmin[aid]) debtorsByAdmin[aid] = new Map();
     if (!debtorsByAdmin[aid].has(inv.debtor_number)) {
       debtorsByAdmin[aid].set(inv.debtor_number, {
-        debtor_number:     inv.debtor_number,
-        name:              inv.debtor_name,
-        debtor_identifier: inv.debtor_identifier || inv.debtor_number,
+        debtor_number:      inv.debtor_number,
+        name:               inv.debtor_name,
+        debtor_identifier:  inv.debtor_identifier || inv.debtor_number,
+        contact_identifier: inv.debtor_identifier || inv.debtor_number,
         ...(inv.debtor_country_code && { country_code: inv.debtor_country_code }),
         ...(inv.debtor_vat_number   && { vat_number:   inv.debtor_vat_number }),
         ...(inv.debtor_is_company != null && { is_company: inv.debtor_is_company }),
@@ -57,10 +105,11 @@ export default async function handler(req, res) {
   for (const [administrationId, debtorMap] of Object.entries(debtorsByAdmin)) {
     const payload = { administration_id: administrationId, debtors: [...debtorMap.values()] };
     try {
+      console.log('[payt-push] DEBTOR payload:', JSON.stringify(payload));
       const r = await fetch(`${PAYT_BASE}/v1/debtors`, { method: 'POST', headers, body: JSON.stringify(payload) });
       const data = await r.json().catch(() => ({}));
+      console.log('[payt-push] DEBTOR response', r.status, JSON.stringify(data));
       if (!r.ok) {
-        // Mark all invoices for this admin as failed at debtor step
         invoices
           .filter(inv => inv.administration_id === administrationId)
           .forEach(inv => {
@@ -76,7 +125,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── Step 2: create invoices (per administration) ──
+  // ── Step 3: create invoices (per administration) ──
   const invoicesByAdmin = {};
   invoices.forEach(inv => {
     if (!invoicesByAdmin[inv.administration_id]) invoicesByAdmin[inv.administration_id] = [];
@@ -84,7 +133,6 @@ export default async function handler(req, res) {
   });
 
   for (const [administrationId, batch] of Object.entries(invoicesByAdmin)) {
-    // Skip batch if all invoices already have debtor errors
     const payload = {
       administration_id: administrationId,
       invoices: batch.map(inv => ({
@@ -101,8 +149,10 @@ export default async function handler(req, res) {
     };
 
     try {
+      console.log('[payt-push] INVOICE payload:', JSON.stringify(payload));
       const r = await fetch(`${PAYT_BASE}/v1/invoices`, { method: 'POST', headers, body: JSON.stringify(payload) });
       const data = await r.json().catch(() => ({}));
+      console.log('[payt-push] INVOICE response', r.status, JSON.stringify(data));
 
       if (!r.ok && !data?.errors) {
         batch.forEach(inv => {
@@ -111,7 +161,6 @@ export default async function handler(req, res) {
           );
         });
       } else {
-        // PAYT returns per-invoice errors keyed by invoice_number
         batch.forEach(inv => {
           const invErrors   = data?.errors?.[inv.invoice_number]   || [];
           const invWarnings = data?.warnings?.[inv.invoice_number] || [];
