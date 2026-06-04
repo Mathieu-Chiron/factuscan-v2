@@ -36,7 +36,7 @@ export default async function handler(req, res) {
 
   try {
     const pdfBuffer = Buffer.from(pdf_base64, 'base64');
-    const checksum  = crypto.createHash('md5').update(pdfBuffer).digest('base64');
+    const checksum  = crypto.createHash('md5').update(pdfBuffer).digest('hex');
     const byte_size = pdfBuffer.length;
 
     // ── Step 1: Register file with PAYT to obtain signed upload URL ──
