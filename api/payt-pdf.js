@@ -36,13 +36,13 @@ export default async function handler(req, res) {
 
   try {
     const pdfBuffer = Buffer.from(pdf_base64, 'base64');
-    const checksum  = crypto.createHash('md5').update(pdfBuffer).digest('hex');
-    const byte_size = pdfBuffer.length;
+    const checksum  = crypto.createHash('sha3-512').update(pdfBuffer).digest('base64');
+    const byte_size = String(pdfBuffer.length);
 
     // ── Step 1: Register file with PAYT to obtain signed upload URL ──
     const filesPayload = {
       administration_id,
-      files: [{ byte_size, checksum, content_type: 'application/pdf' }],
+      files: [{ byte_size, checksum, content_type: 'application/pdf', filename }],
     };
     console.log(`[payt-pdf ${ts()}] FILES payload:`, JSON.stringify(filesPayload));
     const filesRes = await fetch(`${PAYT_BASE}/v1/files`, {
@@ -60,8 +60,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // Response may be a single object { checksum, url } or wrapped in files[]
-    const entry         = Array.isArray(filesData.files) ? filesData.files[0] : filesData;
+    // Response is an array [{checksum, url, expires_at}]
+    const entry         = Array.isArray(filesData) ? filesData[0] : (Array.isArray(filesData.files) ? filesData.files[0] : filesData);
     const uploadUrl     = entry.url;
     const finalChecksum = entry.checksum || checksum;
 
