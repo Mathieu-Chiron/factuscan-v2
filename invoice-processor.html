@@ -1317,7 +1317,16 @@ function renderExpTable(){
         const ps=row._inv.pushStatus;
         let icon='<span style="display:inline-block;width:16px;"></span>';
         if(ps==='sending') icon=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
-        else if(ps==='success') icon=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`;
+        else if(ps==='success'){
+          if(row._inv.pdfError){
+            icon=`<span title="Facture créée mais PDF non attaché : ${esc(row._inv.pdfError||'')}" style="display:inline-flex;align-items:center;gap:2px;cursor:default;">`+
+              `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`+
+              `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#E07B00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>`+
+              `</span>`;
+          } else {
+            icon=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`;
+          }
+        }
         else if(ps==='error') icon=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" title="${esc(row._inv.pushError||'')}"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
         return `<td style="width:24px;text-align:center;padding:8px 6px;">${icon}</td>`;
       }
@@ -1541,14 +1550,45 @@ async function pushToPayt(){
     saveDataset();
     renderExpTable();
 
+    // ── PDF upload for successfully created invoices ──
+    const pdfQueue=toSend.filter(inv=>inv.pushStatus==='success');
+    if(pdfQueue.length){
+      btn.textContent='Envoi PDF…';
+      await Promise.all(pdfQueue.map(async inv=>{
+        try{
+          const buf=await inv.file.arrayBuffer();
+          if(!buf.byteLength){inv.pdfError='PDF non disponible (fichier non chargé)';return;}
+          // Encode to base64 in chunks to handle large files
+          const bytes=new Uint8Array(buf);
+          let binary='';
+          const chunk=8192;
+          for(let i=0;i<bytes.length;i+=chunk) binary+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk));
+          const pdf_base64=btoa(binary);
+          const pdfRes=await fetch('/api/payt-pdf',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({token,administration_id:inv.targetCompany.id,invoice_number:inv.data.invoice_number,filename:inv.file.name,pdf_base64}),
+          });
+          const pdfData=await pdfRes.json().catch(()=>({}));
+          inv.pdfError=pdfData.success?null:(pdfData.error||'Erreur upload PDF');
+        }catch(e){inv.pdfError='Erreur réseau (PDF)';}
+      }));
+      saveDataset();
+      renderExpTable();
+    }
+
+    const pdfErrors=pdfQueue.filter(inv=>inv.pdfError).length;
     const summary=document.getElementById('pushSummary');
     summary.style.display='block';
-    if(errors===0){
+    if(errors===0&&pdfErrors===0){
       summary.style.cssText='display:block;margin-top:10px;font-size:13px;padding:10px 14px;border-radius:var(--radius);background:rgba(50,192,130,0.10);border:1px solid rgba(50,192,130,0.30);color:#085041;';
-      summary.textContent=`${ok} facture${ok>1?'s':''} envoyée${ok>1?'s':''} avec succès vers PAYT.`;
+      summary.textContent=`${ok} facture${ok>1?'s':''} envoyée${ok>1?'s':''} avec PDF vers PAYT.`;
+    } else if(errors===0&&pdfErrors>0){
+      summary.style.cssText='display:block;margin-top:10px;font-size:13px;padding:10px 14px;border-radius:var(--radius);background:rgba(224,123,0,0.08);border:1px solid rgba(224,123,0,0.30);color:#7A4500;';
+      summary.textContent=`${ok} facture${ok>1?'s':''} créée${ok>1?'s':''} sur PAYT, mais ${pdfErrors} PDF non attaché${pdfErrors>1?'s':''}. Survolez les ⚠ pour voir le détail.`;
     } else {
       summary.style.cssText='display:block;margin-top:10px;font-size:13px;padding:10px 14px;border-radius:var(--radius);background:rgba(217,31,44,0.06);border:1px solid rgba(217,31,44,0.20);color:var(--red);';
-      summary.textContent=`${ok} succès, ${errors} erreur${errors>1?'s':''}. Survolez les ✗ pour voir le détail.`;
+      summary.textContent=`${ok} succès, ${errors} erreur${errors>1?'s':''}${pdfErrors?`, ${pdfErrors} PDF non attaché${pdfErrors>1?'s':''}`:''}. Survolez les icônes pour voir le détail.`;
     }
   }catch(e){
     toSend.forEach(inv=>{inv.pushStatus='error';inv.pushError='Erreur réseau';});
@@ -1792,7 +1832,7 @@ function saveDataset(){
     const snap=S.invoices.map(inv=>({
       fileName:inv.file.name,status:inv.status,data:inv.data,
       errors:inv.errors,confidence:inv.confidence,rawNorm:inv.rawNorm,debtorType:inv.debtorType,
-      repaired:inv.repaired||false,targetCompany:inv.targetCompany||null,paytStep:inv.paytStep||null,paytStatus:inv.paytStatus||null,amountPaid:inv.amountPaid??null,baseOpenAmount:inv.baseOpenAmount??null
+      repaired:inv.repaired||false,targetCompany:inv.targetCompany||null,paytStep:inv.paytStep||null,paytStatus:inv.paytStatus||null,amountPaid:inv.amountPaid??null,baseOpenAmount:inv.baseOpenAmount??null,pdfError:inv.pdfError||null
     }));
     localStorage.setItem('factuscan_dataset',JSON.stringify(snap));
   }catch(e){}
@@ -1809,7 +1849,7 @@ function restoreDataset(){
       const stubFile={name:d.fileName,type:'application/pdf',arrayBuffer:()=>Promise.resolve(new ArrayBuffer(0))};
       S.files.push(stubFile);
       S.invoices.push({file:stubFile,status:d.status,data:d.data,errors:d.errors,
-        confidence:d.confidence,rawNorm:d.rawNorm,debtorType:d.debtorType,repaired:d.repaired,targetCompany:d.targetCompany||null,paytStep:d.paytStep||null,paytStatus:d.paytStatus||null,amountPaid:d.amountPaid??null,baseOpenAmount:d.baseOpenAmount??null});
+        confidence:d.confidence,rawNorm:d.rawNorm,debtorType:d.debtorType,repaired:d.repaired,targetCompany:d.targetCompany||null,paytStep:d.paytStep||null,paytStatus:d.paytStatus||null,amountPaid:d.amountPaid??null,baseOpenAmount:d.baseOpenAmount??null,pdfError:d.pdfError||null});
     });
     document.getElementById('screen-upload').classList.add('out');
     setTimeout(()=>{
