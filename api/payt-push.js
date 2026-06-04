@@ -20,6 +20,7 @@
 // }
 
 const PAYT_BASE = 'https://api.paytsoftware.com/api';
+const ts = () => new Date().toISOString().replace('T',' ').slice(0,19);
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -64,10 +65,10 @@ export default async function handler(req, res) {
   for (const [administrationId, contactMap] of Object.entries(contactsByAdmin)) {
     const payload = { administration_id: administrationId, contacts: [...contactMap.values()] };
     try {
-      console.log('[payt-push] CONTACT payload:', JSON.stringify(payload));
+      console.log(`[payt-push ${ts()}] CONTACT payload:`, JSON.stringify(payload));
       const r = await fetch(`${PAYT_BASE}/v1/contacts`, { method: 'POST', headers, body: JSON.stringify(payload) });
       const data = await r.json().catch(() => ({}));
-      console.log('[payt-push] CONTACT response', r.status, JSON.stringify(data));
+      console.log(`[payt-push ${ts()}] CONTACT response`, r.status, JSON.stringify(data));
       if (!r.ok) {
         invoices
           .filter(inv => inv.administration_id === administrationId)
@@ -105,10 +106,10 @@ export default async function handler(req, res) {
   for (const [administrationId, debtorMap] of Object.entries(debtorsByAdmin)) {
     const payload = { administration_id: administrationId, debtors: [...debtorMap.values()] };
     try {
-      console.log('[payt-push] DEBTOR payload:', JSON.stringify(payload));
+      console.log(`[payt-push ${ts()}] DEBTOR payload:`, JSON.stringify(payload));
       const r = await fetch(`${PAYT_BASE}/v1/debtors`, { method: 'POST', headers, body: JSON.stringify(payload) });
       const data = await r.json().catch(() => ({}));
-      console.log('[payt-push] DEBTOR response', r.status, JSON.stringify(data));
+      console.log(`[payt-push ${ts()}] DEBTOR response`, r.status, JSON.stringify(data));
       if (!r.ok) {
         invoices
           .filter(inv => inv.administration_id === administrationId)
@@ -149,10 +150,10 @@ export default async function handler(req, res) {
     };
 
     try {
-      console.log('[payt-push] INVOICE payload:', JSON.stringify(payload));
+      console.log(`[payt-push ${ts()}] INVOICE payload:`, JSON.stringify(payload));
       const r = await fetch(`${PAYT_BASE}/v1/invoices`, { method: 'POST', headers, body: JSON.stringify(payload) });
       const data = await r.json().catch(() => ({}));
-      console.log('[payt-push] INVOICE response', r.status, JSON.stringify(data));
+      console.log(`[payt-push ${ts()}] INVOICE response`, r.status, JSON.stringify(data));
 
       if (!r.ok && !data?.errors) {
         batch.forEach(inv => {

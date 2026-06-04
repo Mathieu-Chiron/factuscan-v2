@@ -16,6 +16,7 @@
 import crypto from 'crypto';
 
 const PAYT_BASE = 'https://api.paytsoftware.com/api';
+const ts = () => new Date().toISOString().replace('T',' ').slice(0,19);
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -43,14 +44,14 @@ export default async function handler(req, res) {
       administration_id,
       files: [{ byte_size, checksum, content_type: 'application/pdf' }],
     };
-    console.log('[payt-pdf] FILES payload:', JSON.stringify(filesPayload));
+    console.log(`[payt-pdf ${ts()}] FILES payload:`, JSON.stringify(filesPayload));
     const filesRes = await fetch(`${PAYT_BASE}/v1/files`, {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify(filesPayload),
     });
     const filesData = await filesRes.json().catch(() => ({}));
-    console.log('[payt-pdf] FILES response', filesRes.status, JSON.stringify(filesData));
+    console.log(`[payt-pdf ${ts()}] FILES response`, filesRes.status, JSON.stringify(filesData));
 
     if (!filesRes.ok) {
       return res.status(200).json({
@@ -69,13 +70,13 @@ export default async function handler(req, res) {
     }
 
     // ── Step 2: PUT raw PDF bytes to signed URL ──
-    console.log('[payt-pdf] PUT to signed URL');
+    console.log(`[payt-pdf ${ts()}] PUT to signed URL`);
     const putRes = await fetch(uploadUrl, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/pdf' },
       body: pdfBuffer,
     });
-    console.log('[payt-pdf] PUT response', putRes.status);
+    console.log(`[payt-pdf ${ts()}] PUT response`, putRes.status);
 
     if (!putRes.ok) {
       return res.status(200).json({ success: false, error: `Erreur upload PDF vers stockage [${putRes.status}]` });
@@ -86,14 +87,14 @@ export default async function handler(req, res) {
       administration_id,
       invoices: [{ invoice_number, document: { checksum: finalChecksum, filename } }],
     };
-    console.log('[payt-pdf] PATCH payload:', JSON.stringify(patchPayload));
+    console.log(`[payt-pdf ${ts()}] PATCH payload:`, JSON.stringify(patchPayload));
     const patchRes = await fetch(`${PAYT_BASE}/v1/invoices`, {
       method: 'PATCH',
       headers: jsonHeaders,
       body: JSON.stringify(patchPayload),
     });
     const patchData = await patchRes.json().catch(() => ({}));
-    console.log('[payt-pdf] PATCH response', patchRes.status, JSON.stringify(patchData));
+    console.log(`[payt-pdf ${ts()}] PATCH response`, patchRes.status, JSON.stringify(patchData));
 
     if (!patchRes.ok) {
       const invErrors = patchData?.errors?.[invoice_number];
