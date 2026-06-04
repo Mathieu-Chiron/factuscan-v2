@@ -1850,6 +1850,62 @@ suite('PAYT — montant réduit après applyAmountPaid transmis correctement', (
   test('paiement total → "0" envoyé à PAYT',                String(i.data.invoice_open_amount_inc_vat), '0');
 });
 
+
+/* ══ AUTO-FILL targetCompany ══ */
+
+function getAutoTargetCompany(administrations) {
+  if (administrations.length === 1) return { id: administrations[0].id, name: administrations[0].name };
+  return null;
+}
+
+function autoFillTargetCompany(invoices, administrations) {
+  if (administrations.length !== 1) return;
+  const only = administrations[0];
+  invoices.forEach(inv => { if (!inv.targetCompany) inv.targetCompany = { id: only.id, name: only.name }; });
+}
+
+const oneAdmin   = [{ id: 'ADM-1', name: 'Société A', city: 'Paris' }];
+const twoAdmins  = [{ id: 'ADM-1', name: 'Société A' }, { id: 'ADM-2', name: 'Société B' }];
+
+suite('getAutoTargetCompany — cible auto si 1 seule administration', () => {
+  test('1 admin → retourne {id, name}',
+    getAutoTargetCompany(oneAdmin), { id: 'ADM-1', name: 'Société A' });
+  test('2 admins → null',
+    getAutoTargetCompany(twoAdmins), null);
+  test('0 admins → null',
+    getAutoTargetCompany([]), null);
+});
+
+suite('autoFillTargetCompany — remplissage des factures existantes', () => {
+  let invs;
+
+  invs = [{ targetCompany: null }, { targetCompany: null }];
+  autoFillTargetCompany(invs, oneAdmin);
+  test('1 admin, 2 factures sans cible → toutes remplies',
+    invs.every(i => i.targetCompany?.id === 'ADM-1'), true);
+
+  invs = [{ targetCompany: { id: 'ADM-99', name: 'Autre' } }];
+  autoFillTargetCompany(invs, oneAdmin);
+  test('1 admin, facture avec cible existante → non écrasée',
+    invs[0].targetCompany.id, 'ADM-99');
+
+  invs = [{ targetCompany: null }, { targetCompany: { id: 'ADM-99', name: 'Autre' } }];
+  autoFillTargetCompany(invs, oneAdmin);
+  test('1 admin, mix null + existante → seule la null est remplie',
+    invs[0].targetCompany?.id, 'ADM-1');
+  test('1 admin, mix null + existante → existante préservée',
+    invs[1].targetCompany.id, 'ADM-99');
+
+  invs = [{ targetCompany: null }, { targetCompany: null }];
+  autoFillTargetCompany(invs, twoAdmins);
+  test('2 admins → aucune facture remplie',
+    invs.every(i => i.targetCompany === null), true);
+
+  invs = [{ targetCompany: null }];
+  autoFillTargetCompany(invs, []);
+  test('0 admins → aucune facture remplie',
+    invs[0].targetCompany, null);
+});
 console.log(`\n${'─'.repeat(50)}`);
 console.log(`✓ ${pass} passed   ${fail>0?'✗ '+fail+' failed':''}`);
 console.log('─'.repeat(50));

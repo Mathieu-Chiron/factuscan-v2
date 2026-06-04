@@ -727,7 +727,7 @@ function handleFiles(list) {
   if(limit.totalExceeded) showBatchLimitPopup(`Limite de ${TOTAL_LIMIT} factures atteinte : seuls ${limit.accepted} fichier(s) ont été ajoutés.`);
   const firstBatch = S.invoices.length===0 && accepted.length>0;
   const duplicates=[];
-  accepted.forEach(f=>{ if(S.files.find(x=>x.name===f.name)){duplicates.push(f.name);}else{S.files.push(f);S.invoices.push({file:f,status:'pending',data:{},errors:{},confidence:null,rawNorm:{},debtorType:null,targetCompany:null,paytStep:null,paytStatus:null,amountPaid:null});}});
+  accepted.forEach(f=>{ if(S.files.find(x=>x.name===f.name)){duplicates.push(f.name);}else{S.files.push(f);S.invoices.push({file:f,status:'pending',data:{},errors:{},confidence:null,rawNorm:{},debtorType:null,targetCompany:(paytAdministrations.length===1?{id:paytAdministrations[0].id,name:paytAdministrations[0].name}:null),paytStep:null,paytStatus:null,amountPaid:null});}});
   if(duplicates.length) showDupToast(duplicates);
   if (!accepted.length) return;
   if (firstBatch) {
@@ -1778,6 +1778,12 @@ if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https:
     paytAdministrations = [...data.administrations].sort((a,b)=>a.name.localeCompare(b.name,'fr'));
     const ol = document.getElementById('companiesList');
     ol.innerHTML = paytAdministrations.map(a=>`<li>${esc(a.name)}${a.city ? ' — '+esc(a.city) : ''}</li>`).join('');
+    // Auto-fill target company if only one administration
+    if(paytAdministrations.length===1){
+      const only=paytAdministrations[0];
+      S.invoices.forEach(inv=>{ if(!inv.targetCompany) inv.targetCompany={id:only.id,name:only.name}; });
+      saveDataset();
+    }
   } catch(e){}
 })();
 /* ══ DATASET SAVE / RESTORE ══════════════════════════ */
