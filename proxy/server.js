@@ -23,6 +23,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// Returns the proxy's own outbound IP — use this to whitelist with PAYT
+app.get('/ip', async (req, res) => {
+  try {
+    const r = await fetch('https://api.ipify.org?format=json');
+    const data = await r.json();
+    res.json({ outbound_ip: data.ip });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.all('*', async (req, res) => {
   // Build PAYT target URL: proxy path + query string
   const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
