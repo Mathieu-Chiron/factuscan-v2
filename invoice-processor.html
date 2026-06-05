@@ -712,10 +712,10 @@ const S = {
   invoices:[], cur:-1, busy:false, zipDownloaded:false,
 };
 
-/* ══ SESSION ID ══════════════════════════════════════ */
-const SESSION_ID = sessionStorage.getItem('factuscan_session') || (()=>{
-  const id='sess_'+Math.random().toString(36).slice(2)+Date.now().toString(36);
-  sessionStorage.setItem('factuscan_session',id);
+/* ══ USER ID (persistent across sessions) ════════════ */
+const USER_ID = localStorage.getItem('factuscan_user_id') || (()=>{
+  const id='user_'+Math.random().toString(36).slice(2)+Date.now().toString(36);
+  localStorage.setItem('factuscan_user_id',id);
   return id;
 })();
 
@@ -1880,7 +1880,7 @@ async function saveToDb(snap){
   try{
     await fetch('/api/db-save',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({session_id:SESSION_ID,invoices:snap}),
+      body:JSON.stringify({session_id:USER_ID,invoices:snap}),
     });
   }catch(e){}
 }
@@ -1904,11 +1904,22 @@ function restoreDataset(){
     },280);
   }catch(e){}
 }
-(function initRestoreBar(){
+(async function initRestoreBar(){
   try{
-    const snap=JSON.parse(localStorage.getItem('factuscan_dataset')||'[]');
-    if(!snap.length) return;
-    document.getElementById('restoreLabel').textContent=`Reprendre la session — ${snap.length} facture${snap.length>1?'s':''} sauvegardée${snap.length>1?'s':''}`;
+    // Priorité 1 : localStorage (immédiat)
+    const local=JSON.parse(localStorage.getItem('factuscan_dataset')||'[]');
+    if(local.length){
+      document.getElementById('restoreLabel').textContent=`Reprendre — ${local.length} facture${local.length>1?'s':''} sauvegardée${local.length>1?'s':''}`;
+      document.getElementById('restoreBtn').style.display='block';
+      return;
+    }
+    // Priorité 2 : DB (si localStorage vide)
+    const r=await fetch('/api/db-load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:USER_ID})});
+    if(!r.ok) return;
+    const {invoices}=await r.json().catch(()=>({}));
+    if(!invoices?.length) return;
+    localStorage.setItem('factuscan_dataset',JSON.stringify(invoices));
+    document.getElementById('restoreLabel').textContent=`Reprendre — ${invoices.length} facture${invoices.length>1?'s':''} sauvegardée${invoices.length>1?'s':''}`;
     document.getElementById('restoreBtn').style.display='block';
   }catch(e){}
 })();
