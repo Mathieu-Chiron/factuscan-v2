@@ -10,32 +10,43 @@
 //   administration_id: string,
 //   invoice_number: string,
 //   filename: string,
-//   pdf_base64: string
+//   pdf_url: string        ← public Vercel Blob URL (preferred)
+//   pdf_base64: string     ← legacy fallback
 // }
 
 import crypto from 'crypto';
 
-const PAYT_BASE = 'https://api.paytsoftware.com/api';
+const PAYT_BASE = process.env.PAYT_PROXY_URL || 'https://api.paytsoftware.com/api';
+const PROXY_SECRET = process.env.PROXY_SECRET;
 const ts = () => new Date().toISOString().replace('T',' ').slice(0,19);
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { token, administration_id, invoice_number, filename, pdf_base64 } = req.body || {};
+  const { token, administration_id, invoice_number, filename, pdf_url, pdf_base64 } = req.body || {};
   if (!token)             return res.status(400).json({ error: 'missing_token' });
   if (!administration_id) return res.status(400).json({ error: 'missing_administration_id' });
   if (!invoice_number)    return res.status(400).json({ error: 'missing_invoice_number' });
   if (!filename)          return res.status(400).json({ error: 'missing_filename' });
-  if (!pdf_base64)        return res.status(400).json({ error: 'missing_pdf' });
+  if (!pdf_url && !pdf_base64) return res.status(400).json({ error: 'missing_pdf' });
 
   const jsonHeaders = {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
     Accept: 'application/json',
+    ...(PROXY_SECRET && { 'x-proxy-secret': PROXY_SECRET }),
   };
 
   try {
-    const pdfBuffer = Buffer.from(pdf_base64, 'base64');
+    let pdfBuffer;
+    if (pdf_url) {
+      const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+      const fetchRes = await fetch(pdf_url, blobToken ? { headers: { Authorization: `Bearer ${blobToken}` } } : {});
+      if (!fetchRes.ok) return res.status(200).json({ success: false, error: `Erreur fetch PDF depuis Blob [${fetchRes.status}]` });
+      pdfBuffer = Buffer.from(await fetchRes.arrayBuffer());
+    } else {
+      pdfBuffer = Buffer.from(pdf_base64, 'base64');
+    }
     const checksum  = crypto.createHash('sha3-512').update(pdfBuffer).digest('base64');
     const byte_size = String(pdfBuffer.length);
 

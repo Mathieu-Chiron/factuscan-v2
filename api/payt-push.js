@@ -19,7 +19,8 @@
 //   }]
 // }
 
-const PAYT_BASE = 'https://api.paytsoftware.com/api';
+const PAYT_BASE = process.env.PAYT_PROXY_URL || 'https://api.paytsoftware.com/api';
+const PROXY_SECRET = process.env.PROXY_SECRET;
 const ts = () => new Date().toISOString().replace('T',' ').slice(0,19);
 
 export default async function handler(req, res) {
@@ -33,6 +34,7 @@ export default async function handler(req, res) {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
     Accept: 'application/json',
+    ...(PROXY_SECRET && { 'x-proxy-secret': PROXY_SECRET }),
   };
 
   const results = {};

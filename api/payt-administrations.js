@@ -8,7 +8,8 @@
 //  - It is forwarded to PAYT in the Authorization header and never logged
 //    or persisted server-side.
 
-const PAYT_BASE = 'https://api.paytsoftware.com/api';
+const PAYT_BASE = process.env.PAYT_PROXY_URL || 'https://api.paytsoftware.com/api';
+const PROXY_SECRET = process.env.PROXY_SECRET;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -41,6 +42,7 @@ export default async function handler(req, res) {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/json',
+          ...(PROXY_SECRET && { 'x-proxy-secret': PROXY_SECRET }),
         },
       });
 
