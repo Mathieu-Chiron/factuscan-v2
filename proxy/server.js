@@ -15,15 +15,7 @@ const PAYT_BASE = 'https://api.paytsoftware.com/api';
 // Parse every body as raw bytes so we forward it untouched
 app.use(express.raw({ type: '*/*', limit: '50mb' }));
 
-// Auth: reject requests without the shared secret
-app.use((req, res, next) => {
-  if (SECRET && req.headers['x-proxy-secret'] !== SECRET) {
-    return res.status(401).json({ error: 'unauthorized' });
-  }
-  next();
-});
-
-// Returns the proxy's own outbound IP — use this to whitelist with PAYT
+// Returns the proxy's own outbound IP — public, no auth needed
 app.get('/ip', async (req, res) => {
   try {
     const r = await fetch('https://api.ipify.org?format=json');
@@ -32,6 +24,14 @@ app.get('/ip', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// Auth: reject requests without the shared secret
+app.use((req, res, next) => {
+  if (SECRET && req.headers['x-proxy-secret'] !== SECRET) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  next();
 });
 
 app.all('*', async (req, res) => {
