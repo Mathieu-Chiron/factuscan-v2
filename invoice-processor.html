@@ -7,7 +7,6 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'><path d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z' stroke='%2355D6DE' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/><circle cx='12' cy='12' r='3' stroke='%2355D6DE' stroke-width='2.5'/></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha3/0.9.3/sha3.min.js"></script>
 <link rel="stylesheet" href="payt-design.css"/>
 <style>
 /* ── App-specific tokens (aliases to payt-design.css vars) ── */
@@ -1521,8 +1520,6 @@ function showExport(){
 function hideExport(){document.getElementById('screen-export').classList.remove('show');}
 
 /* ══ PUSH TO PAYT ════════════════════════════════════ */
-const PAYT_BASE='https://api.paytsoftware.com/api';
-
 async function pushToPayt(){
   const token=sessionStorage.getItem('paytToken');
   if(!token){alert('Token PAYT manquant. Reconnectez-vous via /payt-connect.html');return;}
@@ -1541,6 +1538,7 @@ async function pushToPayt(){
   const btn=document.getElementById('btnPushPayt');
   btn.disabled=true;btn.textContent='Envoi en cours…';
 
+  // Mark all as sending
   toSend.forEach(inv=>{inv.pushStatus='sending';inv.pushError=null;});
   renderExpTable();
 
@@ -1571,100 +1569,14 @@ async function pushToPayt(){
     };
   });
 
-  const paytHeaders={Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'};
-  const results={};
-  payload.forEach(inv=>{results[inv.invoice_number]={success:false,errors:[],warnings:[]};});
-
   try{
-    // ── Step 1: contacts (deduplicated per administration) ──
-    const contactsByAdmin={};
-    payload.forEach(inv=>{
-      const aid=inv.administration_id;
-      if(!contactsByAdmin[aid]) contactsByAdmin[aid]=new Map();
-      const cid=inv.debtor_identifier||inv.debtor_number;
-      if(!contactsByAdmin[aid].has(cid)){
-        contactsByAdmin[aid].set(cid,{
-          contact_identifier:cid,
-          lastname:inv.debtor_lastname||inv.debtor_name,
-          ...(inv.debtor_firstname&&{firstname:inv.debtor_firstname}),
-          ...(inv.debtor_infix&&{infix:inv.debtor_infix}),
-          ...(inv.debtor_post_street_1&&{postal_address_street_1:inv.debtor_post_street_1}),
-          ...(inv.debtor_post_postalcode&&{postal_address_postal_code:inv.debtor_post_postalcode}),
-          ...(inv.debtor_post_city&&{postal_address_city:inv.debtor_post_city}),
-          ...(inv.debtor_country_code&&{postal_address_country_code:inv.debtor_country_code}),
-          ...(inv.debtor_email&&{default_email_address:inv.debtor_email}),
-        });
-      }
+    const res=await fetch('/api/payt-push',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token,invoices:payload}),
     });
-    for(const[aid,cmap]of Object.entries(contactsByAdmin)){
-      const r=await fetch(`${PAYT_BASE}/v1/contacts`,{method:'POST',headers:paytHeaders,body:JSON.stringify({administration_id:aid,contacts:[...cmap.values()]})}).catch(()=>null);
-      if(!r||!r.ok){
-        const d=r?await r.json().catch(()=>({})):{};
-        payload.filter(inv=>inv.administration_id===aid).forEach(inv=>{
-          results[inv.invoice_number].errors.push(`Erreur contact [${r?.status||0}]: ${d?.error?.message||d?.message||'Erreur inconnue'}`);
-        });
-      }
-    }
-
-    // ── Step 2: debtors (deduplicated per administration) ──
-    const debtorsByAdmin={};
-    payload.forEach(inv=>{
-      const aid=inv.administration_id;
-      if(!debtorsByAdmin[aid]) debtorsByAdmin[aid]=new Map();
-      if(!debtorsByAdmin[aid].has(inv.debtor_number)){
-        debtorsByAdmin[aid].set(inv.debtor_number,{
-          debtor_number:inv.debtor_number,
-          name:inv.debtor_name,
-          debtor_identifier:inv.debtor_identifier||inv.debtor_number,
-          contact_identifier:inv.debtor_identifier||inv.debtor_number,
-          ...(inv.debtor_country_code&&{country_code:inv.debtor_country_code}),
-          ...(inv.debtor_vat_number&&{vat_number:inv.debtor_vat_number}),
-          ...(inv.debtor_is_company!=null&&{is_company:inv.debtor_is_company}),
-        });
-      }
-    });
-    for(const[aid,dmap]of Object.entries(debtorsByAdmin)){
-      const r=await fetch(`${PAYT_BASE}/v1/debtors`,{method:'POST',headers:paytHeaders,body:JSON.stringify({administration_id:aid,debtors:[...dmap.values()]})}).catch(()=>null);
-      if(!r||!r.ok){
-        const d=r?await r.json().catch(()=>({})):{};
-        payload.filter(inv=>inv.administration_id===aid).forEach(inv=>{
-          results[inv.invoice_number].errors.push(`Erreur débiteur [${r?.status||0}]: ${d?.error?.message||d?.message||'Erreur inconnue'}`);
-        });
-      }
-    }
-
-    // ── Step 3: invoices (per administration) ──
-    const invoicesByAdmin={};
-    payload.forEach(inv=>{
-      if(!invoicesByAdmin[inv.administration_id]) invoicesByAdmin[inv.administration_id]=[];
-      invoicesByAdmin[inv.administration_id].push(inv);
-    });
-    for(const[aid,batch]of Object.entries(invoicesByAdmin)){
-      const invPayload={administration_id:aid,invoices:batch.map(inv=>({
-        debtor_number:inv.debtor_number,
-        invoice_number:inv.invoice_number,
-        invoice_date:inv.invoice_date,
-        due_date:inv.invoice_due_date,
-        book_amount_total:String(inv.invoice_total_amount_inc_vat),
-        amount_total:String(inv.invoice_total_amount_inc_vat),
-        book_amount_open:String(inv.invoice_open_amount_inc_vat),
-        amount_open:String(inv.invoice_open_amount_inc_vat),
-        currency_code:inv.currency_code||'EUR',
-      }))};
-      const r=await fetch(`${PAYT_BASE}/v1/invoices`,{method:'POST',headers:paytHeaders,body:JSON.stringify(invPayload)}).catch(()=>null);
-      const d=r?await r.json().catch(()=>({})):{};
-      if(!r||(!r.ok&&!d?.errors)){
-        batch.forEach(inv=>{results[inv.invoice_number].errors.push(`Erreur facture [${r?.status||0}]: ${d?.error?.message||d?.message||'Erreur inconnue'}`);});
-      } else {
-        batch.forEach(inv=>{
-          const invErrors=d?.errors?.[inv.invoice_number]||[];
-          const invWarnings=d?.warnings?.[inv.invoice_number]||[];
-          results[inv.invoice_number].errors.push(...invErrors);
-          results[inv.invoice_number].warnings.push(...invWarnings);
-          if(!results[inv.invoice_number].errors.length) results[inv.invoice_number].success=true;
-        });
-      }
-    }
+    const data=await res.json().catch(()=>({}));
+    const results=data.results||{};
 
     let ok=0,errors=0;
     toSend.forEach(inv=>{
@@ -1676,13 +1588,21 @@ async function pushToPayt(){
     saveDataset();
     renderExpTable();
 
-    // ── PDF attachment for successfully created invoices ──
+    // ── PDF upload for successfully created invoices ──
     const pdfQueue=toSend.filter(inv=>inv.pushStatus==='success');
     if(pdfQueue.length){
       btn.textContent='Envoi PDF…';
       await Promise.all(pdfQueue.map(async inv=>{
-        try{ await attachPdfToPayt(token,inv); }
-        catch(e){inv.pdfError='Erreur réseau (PDF)';}
+        try{
+          if(!inv.pdfUrl){inv.pdfError='PDF non disponible (URL Blob manquante)';return;}
+          const pdfRes=await fetch('/api/payt-pdf',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({token,administration_id:inv.targetCompany.id,invoice_number:inv.data.invoice_number,filename:inv.fileName,pdf_url:inv.pdfUrl}),
+          });
+          const pdfData=await pdfRes.json().catch(()=>({}));
+          inv.pdfError=pdfData.success?null:(pdfData.error||'Erreur upload PDF');
+        }catch(e){inv.pdfError='Erreur réseau (PDF)';}
       }));
       saveDataset();
       renderExpTable();
@@ -1707,47 +1627,6 @@ async function pushToPayt(){
   }finally{
     btn.disabled=false;btn.textContent='Envoyer vers PAYT';
   }
-}
-
-async function attachPdfToPayt(token,inv){
-  if(!inv.pdfUrl){inv.pdfError='PDF non disponible (URL Blob manquante)';return;}
-  const paytHeaders={Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'};
-
-  // Fetch PDF bytes
-  const pdfRes=await fetch(inv.pdfUrl);
-  if(!pdfRes.ok){inv.pdfError=`Erreur fetch PDF [${pdfRes.status}]`;return;}
-  const pdfBuffer=await pdfRes.arrayBuffer();
-
-  // SHA3-512 checksum (js-sha3) → base64
-  const hashHex=sha3_512(new Uint8Array(pdfBuffer));
-  const hashBytes=new Uint8Array(hashHex.match(/../g).map(b=>parseInt(b,16)));
-  const checksum=btoa(String.fromCharCode(...hashBytes));
-  const byte_size=String(pdfBuffer.byteLength);
-
-  // Step 1: register file with PAYT
-  const filesRes=await fetch(`${PAYT_BASE}/v1/files`,{method:'POST',headers:paytHeaders,body:JSON.stringify({administration_id:inv.targetCompany.id,files:[{byte_size,checksum,content_type:'application/pdf',filename:inv.fileName}]})});
-  const filesData=await filesRes.json().catch(()=>({}));
-  if(!filesRes.ok){inv.pdfError=`Erreur enregistrement fichier [${filesRes.status}]: ${filesData?.error?.message||filesData?.message||'Erreur inconnue'}`;return;}
-
-  const entry=Array.isArray(filesData)?filesData[0]:(Array.isArray(filesData.files)?filesData.files[0]:filesData);
-  const uploadUrl=entry.url;
-  const finalChecksum=entry.checksum||checksum;
-  if(!uploadUrl){inv.pdfError='URL upload absente dans la réponse PAYT';return;}
-
-  // Step 2: PUT raw PDF bytes to signed URL
-  const putRes=await fetch(uploadUrl,{method:'PUT',headers:{'Content-Type':'application/pdf'},body:pdfBuffer});
-  if(!putRes.ok){inv.pdfError=`Erreur upload PDF vers stockage [${putRes.status}]`;return;}
-
-  // Step 3: PATCH invoice to attach document
-  const patchRes=await fetch(`${PAYT_BASE}/v1/invoices`,{method:'PATCH',headers:paytHeaders,body:JSON.stringify({administration_id:inv.targetCompany.id,invoices:[{invoice_number:inv.data.invoice_number,document:{checksum:finalChecksum,filename:inv.fileName}}]})});
-  const patchData=await patchRes.json().catch(()=>({}));
-  if(!patchRes.ok){
-    const invErrors=patchData?.errors?.[inv.data.invoice_number];
-    const msg=invErrors?.length?invErrors.join(', '):(patchData?.error?.message||patchData?.message||'Erreur inconnue');
-    inv.pdfError=`Erreur liaison PDF à la facture [${patchRes.status}]: ${msg}`;
-    return;
-  }
-  inv.pdfError=null;
 }
 
 function snName(s){return s.replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,'_').slice(0,80);}
@@ -1969,23 +1848,13 @@ if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https:
   const token = sessionStorage.getItem('paytToken');
   if(!token) return;
   try {
-    const all=[];
-    let cursor=null;
-    for(let i=0;i<50;i++){
-      const url=new URL(`${PAYT_BASE}/v1/administrations`);
-      url.searchParams.set('per_page','500');
-      if(cursor) url.searchParams.set('cursor',cursor);
-      const r=await fetch(url.toString(),{headers:{Authorization:`Bearer ${token}`,Accept:'application/json'}});
-      if(!r.ok) break;
-      const payload=await r.json().catch(()=>({}));
-      const page=Array.isArray(payload.data)?payload.data:[];
-      all.push(...page);
-      cursor=payload.pagination?.cursor;
-      if(page.length<500||!cursor) break;
-    }
-    paytAdministrations = all.map(a=>({id:a.id,name:a.name,internal_name:a.internal_name,status:a.status,city:a.city,country_code:a.country_code})).sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+    const res = await fetch('/api/payt-administrations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok || !data.administrations) return;
+    paytAdministrations = [...data.administrations].sort((a,b)=>a.name.localeCompare(b.name,'fr'));
     const ol = document.getElementById('companiesList');
     ol.innerHTML = paytAdministrations.map(a=>`<li>${esc(a.name)}${a.city ? ' — '+esc(a.city) : ''}</li>`).join('');
+    // Auto-fill target company if only one administration
     if(paytAdministrations.length===1){
       const only=paytAdministrations[0];
       S.invoices.forEach(inv=>{ if(!inv.targetCompany) inv.targetCompany={id:only.id,name:only.name}; });
