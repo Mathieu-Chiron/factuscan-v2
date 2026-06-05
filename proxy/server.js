@@ -57,7 +57,7 @@ app.all('*', async (req, res) => {
 
     res.status(r.status);
     r.headers.forEach((v, k) => {
-      if (!['transfer-encoding', 'connection'].includes(k)) res.setHeader(k, v);
+      if (!['transfer-encoding', 'connection', 'content-encoding', 'content-length'].includes(k)) res.setHeader(k, v);
     });
     res.send(buf);
   } catch (e) {
