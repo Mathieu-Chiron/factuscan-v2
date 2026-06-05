@@ -1521,7 +1521,7 @@ function hideExport(){document.getElementById('screen-export').classList.remove(
 
 /* ══ PUSH TO PAYT ════════════════════════════════════ */
 async function pushToPayt(){
-  const token=sessionStorage.getItem('paytToken');
+  const token=localStorage.getItem('paytToken');
   if(!token){alert('Token PAYT manquant. Reconnectez-vous via /payt-connect.html');return;}
 
   const toSend=S.invoices.filter(inv=>
@@ -1845,8 +1845,8 @@ function toB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onlo
 function blobProxyUrl(url){return `/api/blob-get?url=${encodeURIComponent(url)}`;}
 if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 (async function loadCompanies(){
-  const token = sessionStorage.getItem('paytToken');
-  if(!token) return;
+  const token = localStorage.getItem('paytToken');
+  if(!token){ window.location.href='/payt-connect.html'; return; }
   try {
     const res = await fetch('/api/payt-administrations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
     const data = await res.json().catch(()=>({}));

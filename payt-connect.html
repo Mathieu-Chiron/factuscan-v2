@@ -89,7 +89,7 @@ async function handleConnect(e) {
     }
 
     // Token valid — store and redirect to main app
-    sessionStorage.setItem('paytToken', token);
+    localStorage.setItem('paytToken', token);
     window.location.href = '/invoice-processor.html';
 
   } catch (err) {
