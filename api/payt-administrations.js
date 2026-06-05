@@ -47,6 +47,7 @@ export default async function handler(req, res) {
       });
 
       const payload = await r.json().catch(() => ({}));
+      console.log(`[payt-administrations] status=${r.status} payload=${JSON.stringify(payload).slice(0,500)}`);
 
       if (!r.ok) {
         // Forward PAYT's full response for debugging
