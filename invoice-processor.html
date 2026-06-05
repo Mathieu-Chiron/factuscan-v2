@@ -7,6 +7,7 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'><path d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z' stroke='%2355D6DE' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/><circle cx='12' cy='12' r='3' stroke='%2355D6DE' stroke-width='2.5'/></svg>"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha3/0.9.3/sha3.min.js"></script>
 <link rel="stylesheet" href="payt-design.css"/>
 <style>
 /* ── App-specific tokens (aliases to payt-design.css vars) ── */
@@ -709,15 +710,22 @@ const S = {
     {label:'Adresse électronique débiteur', key:'debtor_email',      type:'email',  required:false},
   ],
   nomenclature:['debtor_lastname','invoice_number'], nomSep:'_',
-  files:[], invoices:[], cur:-1, busy:false, zipDownloaded:false,
+  invoices:[], cur:-1, busy:false, zipDownloaded:false,
 };
+
+/* ══ SESSION ID ══════════════════════════════════════ */
+const SESSION_ID = sessionStorage.getItem('factuscan_session') || (()=>{
+  const id='sess_'+Math.random().toString(36).slice(2)+Date.now().toString(36);
+  sessionStorage.setItem('factuscan_session',id);
+  return id;
+})();
 
 /* ══ UPLOAD ══════════════════════════════════════════ */
 function onDragOver(e){e.preventDefault();document.getElementById('dropzone').classList.add('over');}
 function onDragLeave(){document.getElementById('dropzone').classList.remove('over');}
 function onDrop(e){e.preventDefault();document.getElementById('dropzone').classList.remove('over');handleFiles(e.dataTransfer.files);}
 
-function handleFiles(list) {
+async function handleFiles(list) {
   const pdfs=Array.from(list).filter(f=>f.type==='application/pdf'||f.name.endsWith('.pdf'));
   if(!pdfs.length) return;
   const limit=filterBatch(S.invoices.length,pdfs.length);
@@ -727,21 +735,43 @@ function handleFiles(list) {
   if(limit.totalExceeded) showBatchLimitPopup(`Limite de ${TOTAL_LIMIT} factures atteinte : seuls ${limit.accepted} fichier(s) ont été ajoutés.`);
   const firstBatch = S.invoices.length===0 && accepted.length>0;
   const duplicates=[];
-  accepted.forEach(f=>{ if(S.files.find(x=>x.name===f.name)){duplicates.push(f.name);}else{S.files.push(f);S.invoices.push({file:f,status:'pending',data:{},errors:{},confidence:null,rawNorm:{},debtorType:null,targetCompany:(paytAdministrations.length===1?{id:paytAdministrations[0].id,name:paytAdministrations[0].name}:null),paytStep:null,paytStatus:null,amountPaid:null});}});
+  const toUpload=[];
+  accepted.forEach(f=>{
+    if(S.invoices.some(x=>x.fileName===f.name)){duplicates.push(f.name);}
+    else{
+      const inv={fileName:f.name,pdfUrl:null,status:'pending',data:{},errors:{},confidence:null,rawNorm:{},debtorType:null,targetCompany:(paytAdministrations.length===1?{id:paytAdministrations[0].id,name:paytAdministrations[0].name}:null),paytStep:null,paytStatus:null,amountPaid:null};
+      S.invoices.push(inv);
+      toUpload.push({f,inv});
+    }
+  });
   if(duplicates.length) showDupToast(duplicates);
-  if (!accepted.length) return;
-  if (firstBatch) {
-    document.getElementById('screen-upload').classList.add('out');
-    setTimeout(()=>{
-      document.getElementById('screen-upload').style.display='none';
-      document.getElementById('screen-main').classList.add('in');
-      startExtraction();
-    },280);
-  } else {
-    startExtraction();
-  }
+  if (!toUpload.length) return;
+
   renderSidebar(); updateBar();
   if (S.cur===-1) selectInv(0);
+
+  if (firstBatch) {
+    document.getElementById('screen-upload').classList.add('out');
+    await new Promise(r=>setTimeout(r,280));
+    document.getElementById('screen-upload').style.display='none';
+    document.getElementById('screen-main').classList.add('in');
+  }
+
+  // Upload all PDFs to Vercel Blob before extraction
+  await Promise.all(toUpload.map(async ({f,inv})=>{
+    try{
+      const res=await fetch(`/api/blob-upload?filename=${encodeURIComponent(f.name)}`,{
+        method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f,
+      });
+      const data=await res.json().catch(()=>({}));
+      if(data.url){inv.pdfUrl=data.url;}
+      else{inv.status='error';inv.error='Erreur upload vers Blob';}
+    }catch(e){inv.status='error';inv.error='Erreur réseau (upload PDF)';}
+  }));
+
+  renderSidebar(); updateBar();
+  if(S.cur>=0) selectInv(S.cur);
+  startExtraction();
 }
 
 /* ══ SIDEBAR ═════════════════════════════════════════ */
@@ -758,7 +788,7 @@ function renderSidebar() {
     el.className='inv-item'+(i===S.cur?' active':'')+(isVal?' inv-validated':'');
     const conf=inv.confidence!==null?`<span class="inv-conf">${inv.confidence}%</span>`:'';
     const check=isVal?`<span class="inv-check">✓</span>`:'';
-    el.innerHTML=`<div class="inv-dot s-${inv.status}"></div><span class="inv-name" title="${esc(inv.file.name)}">${esc(shortName(inv.file.name))}</span>${conf}${check}<button class="inv-remove" onclick="event.stopPropagation();confirmRemove(${i})" title="Écarter cette facture">✕</button>`;
+    el.innerHTML=`<div class="inv-dot s-${inv.status}"></div><span class="inv-name" title="${esc(inv.fileName)}">${esc(shortName(inv.fileName))}</span>${conf}${check}<button class="inv-remove" onclick="event.stopPropagation();confirmRemove(${i})" title="Écarter cette facture">✕</button>`;
     el.onclick=()=>selectInv(i);
     l.appendChild(el);
   });
@@ -771,7 +801,7 @@ function renderSidebar() {
       if(inv.status!=='skipped') return;
       const el=document.createElement('div');
       el.className='sb-ign-item'+(i===S.cur?' active':'');
-      el.innerHTML=`<div class="inv-dot s-skipped"></div><span class="sb-ign-name" title="${esc(inv.file.name)}">${esc(shortName(inv.file.name))}</span>`;
+      el.innerHTML=`<div class="inv-dot s-skipped"></div><span class="sb-ign-name" title="${esc(inv.fileName)}">${esc(shortName(inv.fileName))}</span>`;
       el.onclick=()=>selectInv(i);
       il.appendChild(el);
     });
@@ -786,9 +816,9 @@ function shortName(n){return n.replace(/\.pdf$/i,'');}
 function selectInv(i) {
   S.cur=i; renderSidebar();
   const inv=S.invoices[i]; if(!inv) return;
-  document.getElementById('pdfTitle').textContent=shortName(inv.file.name);
+  document.getElementById('pdfTitle').textContent=shortName(inv.fileName);
   document.getElementById('pdfTitle').style.color='var(--text)';
-  renderPDF(inv.file);
+  renderPDF(inv.pdfUrl);
   document.getElementById('emptyState').style.display='none';
   document.getElementById('fieldsContent').style.display='block';
   document.getElementById('fieldsFooter').style.display='';
@@ -801,11 +831,13 @@ function selectInv(i) {
 }
 
 /* ══ PDF PREVIEW ═════════════════════════════════════ */
-async function renderPDF(file) {
+async function renderPDF(pdfUrl) {
   const vp=document.getElementById('pdfVp');
+  if(!pdfUrl){vp.innerHTML='<div class="pdf-placeholder">Chargement PDF…</div>';return;}
   vp.innerHTML='<div class="pdf-placeholder"><div class="spin spin-d"></div></div>';
   try {
-    const buf=await file.arrayBuffer();
+    const fetchRes=await fetch(pdfUrl);
+    const buf=await fetchRes.arrayBuffer();
     const pdf=await pdfjsLib.getDocument({data:buf}).promise;
     document.getElementById('pdfInfo').textContent=`${pdf.numPages} page${pdf.numPages>1?'s':''}`;
     const w=vp.clientWidth-28;
@@ -1098,7 +1130,7 @@ async function startExtraction(){
     const inv=toEx[idx],gi=S.invoices.indexOf(inv);
     inv.status='extracting';renderSidebar();
     document.getElementById('ovFill').style.width=Math.round(idx/toEx.length*100)+'%';
-    document.getElementById('ovFile').textContent=inv.file.name;
+    document.getElementById('ovFile').textContent=inv.fileName;
     await doExtract(gi);
     renderSidebar();updateBar();
     if(S.cur===gi) selectInv(gi);
@@ -1113,7 +1145,14 @@ async function startExtraction(){
 async function doExtract(i){
   const inv=S.invoices[i];
   try {
-    const b64=await toB64(inv.file);
+    if(!inv.pdfUrl) throw new Error('PDF non disponible (URL Blob manquante)');
+    const pdfFetchRes=await fetch(inv.pdfUrl);
+    if(!pdfFetchRes.ok) throw new Error(`Erreur fetch PDF [${pdfFetchRes.status}]`);
+    const pdfBuf=await pdfFetchRes.arrayBuffer();
+    const pdfBytes=new Uint8Array(pdfBuf);
+    let binary='';const chunk=8192;
+    for(let ci=0;ci<pdfBytes.length;ci+=chunk) binary+=String.fromCharCode.apply(null,pdfBytes.subarray(ci,ci+chunk));
+    const b64=btoa(binary);
     const allFields=[...S.fields,...VAT_FIELDS];
     const fd=allFields.map(f=>`- "${f.label}" → clé JSON: "${f.key}" (type: ${f.type})`).join('\n');
     const prompt=`Tu es un assistant d'extraction de données de factures. Analyse ce PDF et extrait les champs suivants. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans backticks.
@@ -1228,7 +1267,7 @@ async function reExtract(){
   inv.status='pending';inv.data={};inv.errors={};inv.confidence=null;
   selectInv(S.cur);
   const ov=document.getElementById('ov');ov.classList.add('show');
-  document.getElementById('ovFile').textContent=inv.file.name;
+  document.getElementById('ovFile').textContent=inv.fileName;
   document.getElementById('ovFill').style.width='40%';
   await doExtract(S.cur);
   ov.classList.remove('show');
@@ -1482,6 +1521,8 @@ function showExport(){
 function hideExport(){document.getElementById('screen-export').classList.remove('show');}
 
 /* ══ PUSH TO PAYT ════════════════════════════════════ */
+const PAYT_BASE='https://api.paytsoftware.com/api';
+
 async function pushToPayt(){
   const token=sessionStorage.getItem('paytToken');
   if(!token){alert('Token PAYT manquant. Reconnectez-vous via /payt-connect.html');return;}
@@ -1500,7 +1541,6 @@ async function pushToPayt(){
   const btn=document.getElementById('btnPushPayt');
   btn.disabled=true;btn.textContent='Envoi en cours…';
 
-  // Mark all as sending
   toSend.forEach(inv=>{inv.pushStatus='sending';inv.pushError=null;});
   renderExpTable();
 
@@ -1531,14 +1571,100 @@ async function pushToPayt(){
     };
   });
 
+  const paytHeaders={Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'};
+  const results={};
+  payload.forEach(inv=>{results[inv.invoice_number]={success:false,errors:[],warnings:[]};});
+
   try{
-    const res=await fetch('/api/payt-push',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({token,invoices:payload}),
+    // ── Step 1: contacts (deduplicated per administration) ──
+    const contactsByAdmin={};
+    payload.forEach(inv=>{
+      const aid=inv.administration_id;
+      if(!contactsByAdmin[aid]) contactsByAdmin[aid]=new Map();
+      const cid=inv.debtor_identifier||inv.debtor_number;
+      if(!contactsByAdmin[aid].has(cid)){
+        contactsByAdmin[aid].set(cid,{
+          contact_identifier:cid,
+          lastname:inv.debtor_lastname||inv.debtor_name,
+          ...(inv.debtor_firstname&&{firstname:inv.debtor_firstname}),
+          ...(inv.debtor_infix&&{infix:inv.debtor_infix}),
+          ...(inv.debtor_post_street_1&&{postal_address_street_1:inv.debtor_post_street_1}),
+          ...(inv.debtor_post_postalcode&&{postal_address_postal_code:inv.debtor_post_postalcode}),
+          ...(inv.debtor_post_city&&{postal_address_city:inv.debtor_post_city}),
+          ...(inv.debtor_country_code&&{postal_address_country_code:inv.debtor_country_code}),
+          ...(inv.debtor_email&&{default_email_address:inv.debtor_email}),
+        });
+      }
     });
-    const data=await res.json().catch(()=>({}));
-    const results=data.results||{};
+    for(const[aid,cmap]of Object.entries(contactsByAdmin)){
+      const r=await fetch(`${PAYT_BASE}/v1/contacts`,{method:'POST',headers:paytHeaders,body:JSON.stringify({administration_id:aid,contacts:[...cmap.values()]})}).catch(()=>null);
+      if(!r||!r.ok){
+        const d=r?await r.json().catch(()=>({})):{};
+        payload.filter(inv=>inv.administration_id===aid).forEach(inv=>{
+          results[inv.invoice_number].errors.push(`Erreur contact [${r?.status||0}]: ${d?.error?.message||d?.message||'Erreur inconnue'}`);
+        });
+      }
+    }
+
+    // ── Step 2: debtors (deduplicated per administration) ──
+    const debtorsByAdmin={};
+    payload.forEach(inv=>{
+      const aid=inv.administration_id;
+      if(!debtorsByAdmin[aid]) debtorsByAdmin[aid]=new Map();
+      if(!debtorsByAdmin[aid].has(inv.debtor_number)){
+        debtorsByAdmin[aid].set(inv.debtor_number,{
+          debtor_number:inv.debtor_number,
+          name:inv.debtor_name,
+          debtor_identifier:inv.debtor_identifier||inv.debtor_number,
+          contact_identifier:inv.debtor_identifier||inv.debtor_number,
+          ...(inv.debtor_country_code&&{country_code:inv.debtor_country_code}),
+          ...(inv.debtor_vat_number&&{vat_number:inv.debtor_vat_number}),
+          ...(inv.debtor_is_company!=null&&{is_company:inv.debtor_is_company}),
+        });
+      }
+    });
+    for(const[aid,dmap]of Object.entries(debtorsByAdmin)){
+      const r=await fetch(`${PAYT_BASE}/v1/debtors`,{method:'POST',headers:paytHeaders,body:JSON.stringify({administration_id:aid,debtors:[...dmap.values()]})}).catch(()=>null);
+      if(!r||!r.ok){
+        const d=r?await r.json().catch(()=>({})):{};
+        payload.filter(inv=>inv.administration_id===aid).forEach(inv=>{
+          results[inv.invoice_number].errors.push(`Erreur débiteur [${r?.status||0}]: ${d?.error?.message||d?.message||'Erreur inconnue'}`);
+        });
+      }
+    }
+
+    // ── Step 3: invoices (per administration) ──
+    const invoicesByAdmin={};
+    payload.forEach(inv=>{
+      if(!invoicesByAdmin[inv.administration_id]) invoicesByAdmin[inv.administration_id]=[];
+      invoicesByAdmin[inv.administration_id].push(inv);
+    });
+    for(const[aid,batch]of Object.entries(invoicesByAdmin)){
+      const invPayload={administration_id:aid,invoices:batch.map(inv=>({
+        debtor_number:inv.debtor_number,
+        invoice_number:inv.invoice_number,
+        invoice_date:inv.invoice_date,
+        due_date:inv.invoice_due_date,
+        book_amount_total:String(inv.invoice_total_amount_inc_vat),
+        amount_total:String(inv.invoice_total_amount_inc_vat),
+        book_amount_open:String(inv.invoice_open_amount_inc_vat),
+        amount_open:String(inv.invoice_open_amount_inc_vat),
+        currency_code:inv.currency_code||'EUR',
+      }))};
+      const r=await fetch(`${PAYT_BASE}/v1/invoices`,{method:'POST',headers:paytHeaders,body:JSON.stringify(invPayload)}).catch(()=>null);
+      const d=r?await r.json().catch(()=>({})):{};
+      if(!r||(!r.ok&&!d?.errors)){
+        batch.forEach(inv=>{results[inv.invoice_number].errors.push(`Erreur facture [${r?.status||0}]: ${d?.error?.message||d?.message||'Erreur inconnue'}`);});
+      } else {
+        batch.forEach(inv=>{
+          const invErrors=d?.errors?.[inv.invoice_number]||[];
+          const invWarnings=d?.warnings?.[inv.invoice_number]||[];
+          results[inv.invoice_number].errors.push(...invErrors);
+          results[inv.invoice_number].warnings.push(...invWarnings);
+          if(!results[inv.invoice_number].errors.length) results[inv.invoice_number].success=true;
+        });
+      }
+    }
 
     let ok=0,errors=0;
     toSend.forEach(inv=>{
@@ -1550,28 +1676,13 @@ async function pushToPayt(){
     saveDataset();
     renderExpTable();
 
-    // ── PDF upload for successfully created invoices ──
+    // ── PDF attachment for successfully created invoices ──
     const pdfQueue=toSend.filter(inv=>inv.pushStatus==='success');
     if(pdfQueue.length){
       btn.textContent='Envoi PDF…';
       await Promise.all(pdfQueue.map(async inv=>{
-        try{
-          const buf=await inv.file.arrayBuffer();
-          if(!buf.byteLength){inv.pdfError='PDF non disponible (fichier non chargé)';return;}
-          // Encode to base64 in chunks to handle large files
-          const bytes=new Uint8Array(buf);
-          let binary='';
-          const chunk=8192;
-          for(let i=0;i<bytes.length;i+=chunk) binary+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk));
-          const pdf_base64=btoa(binary);
-          const pdfRes=await fetch('/api/payt-pdf',{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({token,administration_id:inv.targetCompany.id,invoice_number:inv.data.invoice_number,filename:inv.file.name,pdf_base64}),
-          });
-          const pdfData=await pdfRes.json().catch(()=>({}));
-          inv.pdfError=pdfData.success?null:(pdfData.error||'Erreur upload PDF');
-        }catch(e){inv.pdfError='Erreur réseau (PDF)';}
+        try{ await attachPdfToPayt(token,inv); }
+        catch(e){inv.pdfError='Erreur réseau (PDF)';}
       }));
       saveDataset();
       renderExpTable();
@@ -1598,6 +1709,47 @@ async function pushToPayt(){
   }
 }
 
+async function attachPdfToPayt(token,inv){
+  if(!inv.pdfUrl){inv.pdfError='PDF non disponible (URL Blob manquante)';return;}
+  const paytHeaders={Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'};
+
+  // Fetch PDF bytes
+  const pdfRes=await fetch(inv.pdfUrl);
+  if(!pdfRes.ok){inv.pdfError=`Erreur fetch PDF [${pdfRes.status}]`;return;}
+  const pdfBuffer=await pdfRes.arrayBuffer();
+
+  // SHA3-512 checksum (js-sha3) → base64
+  const hashHex=sha3_512(new Uint8Array(pdfBuffer));
+  const hashBytes=new Uint8Array(hashHex.match(/../g).map(b=>parseInt(b,16)));
+  const checksum=btoa(String.fromCharCode(...hashBytes));
+  const byte_size=String(pdfBuffer.byteLength);
+
+  // Step 1: register file with PAYT
+  const filesRes=await fetch(`${PAYT_BASE}/v1/files`,{method:'POST',headers:paytHeaders,body:JSON.stringify({administration_id:inv.targetCompany.id,files:[{byte_size,checksum,content_type:'application/pdf',filename:inv.fileName}]})});
+  const filesData=await filesRes.json().catch(()=>({}));
+  if(!filesRes.ok){inv.pdfError=`Erreur enregistrement fichier [${filesRes.status}]: ${filesData?.error?.message||filesData?.message||'Erreur inconnue'}`;return;}
+
+  const entry=Array.isArray(filesData)?filesData[0]:(Array.isArray(filesData.files)?filesData.files[0]:filesData);
+  const uploadUrl=entry.url;
+  const finalChecksum=entry.checksum||checksum;
+  if(!uploadUrl){inv.pdfError='URL upload absente dans la réponse PAYT';return;}
+
+  // Step 2: PUT raw PDF bytes to signed URL
+  const putRes=await fetch(uploadUrl,{method:'PUT',headers:{'Content-Type':'application/pdf'},body:pdfBuffer});
+  if(!putRes.ok){inv.pdfError=`Erreur upload PDF vers stockage [${putRes.status}]`;return;}
+
+  // Step 3: PATCH invoice to attach document
+  const patchRes=await fetch(`${PAYT_BASE}/v1/invoices`,{method:'PATCH',headers:paytHeaders,body:JSON.stringify({administration_id:inv.targetCompany.id,invoices:[{invoice_number:inv.data.invoice_number,document:{checksum:finalChecksum,filename:inv.fileName}}]})});
+  const patchData=await patchRes.json().catch(()=>({}));
+  if(!patchRes.ok){
+    const invErrors=patchData?.errors?.[inv.data.invoice_number];
+    const msg=invErrors?.length?invErrors.join(', '):(patchData?.error?.message||patchData?.message||'Erreur inconnue');
+    inv.pdfError=`Erreur liaison PDF à la facture [${patchRes.status}]: ${msg}`;
+    return;
+  }
+  inv.pdfError=null;
+}
+
 function snName(s){return s.replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,'_').slice(0,80);}
 function fmtDate(date){return String(date||'').slice(0,4);}
 function fmtInvref(val){const digits=String(val||'').replace(/\D/g,'');return digits.slice(-5).padStart(5,'0');}
@@ -1609,7 +1761,7 @@ function getPdfFilename(inv){
   const name=mkFname(inv.data);
   if(FNAME_REGEX.test(name)) return name;
   const num=inv.data['invoice_number'];
-  return(num&&String(num).trim())?snName(String(num))+'.pdf':snName(inv.file.name);
+  return(num&&String(num).trim())?snName(String(num))+'.pdf':snName(inv.fileName);
 }
 function computeDebtorCompanyName(data){
   const parts=[data.debtor_firstname,data.debtor_infix,data.debtor_lastname].filter(v=>v&&String(v).trim());
@@ -1632,7 +1784,11 @@ function buildCSV(){
 function exportCSV(){dlBlob(new Blob(['\uFEFF'+buildCSV()],{type:'text/csv;charset=utf-8;'}),'factures.csv');}
 async function exportZIP(){
   const z=new JSZip();
-  for(const inv of S.invoices.filter(i=>i.status==='validated')) z.file(getPdfFilename(inv),await inv.file.arrayBuffer());
+  for(const inv of S.invoices.filter(i=>i.status==='validated')){
+    if(!inv.pdfUrl) continue;
+    const r=await fetch(inv.pdfUrl);
+    z.file(getPdfFilename(inv),await r.arrayBuffer());
+  }
   dlBlob(await z.generateAsync({type:'blob'}),'factures_pdf.zip');
 }
 async function downloadAll(){
@@ -1646,7 +1802,7 @@ function confirmRestart(){
   doRestart();
 }
 function closeRestartWarn(){document.getElementById('restartWarnBg').classList.remove('show');}
-function doRestart(){closeRestartWarn();S.files=[];S.invoices=[];S.cur=-1;S.busy=false;S.zipDownloaded=false;hideExport();document.getElementById('screen-main').classList.remove('in');document.getElementById('screen-upload').style.display='';setTimeout(()=>document.getElementById('screen-upload').classList.remove('out'),10);}
+function doRestart(){closeRestartWarn();S.invoices=[];S.cur=-1;S.busy=false;S.zipDownloaded=false;hideExport();document.getElementById('screen-main').classList.remove('in');document.getElementById('screen-upload').style.display='';setTimeout(()=>document.getElementById('screen-upload').classList.remove('out'),10);}
 
 /* ══ MODAL ═══════════════════════════════════════════ */
 function openModal(){
@@ -1712,7 +1868,7 @@ function preExportCheck(){
   document.getElementById('skipWarnSub').textContent=
     `${count} facture${plural?'s':''} ignorée${plural?'s':''} ${plural?'ne seront':'ne sera'} pas incluse${plural?'s':''} dans l'export.`;
   document.getElementById('skipWarnList').innerHTML=
-    skipped.map(inv=>`• <b>${esc(inv.file.name)}</b>`).join('<br>');
+    skipped.map(inv=>`• <b>${esc(inv.fileName)}</b>`).join('<br>');
   document.getElementById('skipWarnBg').classList.add('show');
 }
 function closeSkipWarn(){document.getElementById('skipWarnBg').classList.remove('show');}
@@ -1736,7 +1892,6 @@ function closeRemove(){document.getElementById('removeBg').classList.remove('sho
 function doRemove(){
   if(_removeIdx===-1){closeRemove();return;}
   const i=_removeIdx;
-  S.files.splice(i,1);
   S.invoices.splice(i,1);
   if(S.cur===i) S.cur=S.invoices.length>0?Math.min(i,S.invoices.length-1):-1;
   else if(S.cur>i) S.cur--;
@@ -1794,7 +1949,7 @@ function confirmClearSession(){document.getElementById('clearSessionBg').classLi
 function closeClearSession(){document.getElementById('clearSessionBg').classList.remove('show');}
 function clearSession(){
   closeClearSession();
-  S.files=[];S.invoices=[];S.cur=-1;S.busy=false;S.zipDownloaded=false;
+  S.invoices=[];S.cur=-1;S.busy=false;S.zipDownloaded=false;
   hideExport();
   document.getElementById('screen-main').classList.remove('in');
   const su=document.getElementById('screen-upload');
@@ -1807,18 +1962,30 @@ function clearSession(){
 /* ══ UTILS ═══════════════════════════════════════════ */
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function toB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Lecture échouée'));r.readAsDataURL(f);});}
+// Proxy pour blobs privés — le navigateur ne peut pas fetch directement l'URL signée
+function blobProxyUrl(url){return `/api/blob-get?url=${encodeURIComponent(url)}`;}
 if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 (async function loadCompanies(){
   const token = sessionStorage.getItem('paytToken');
   if(!token) return;
   try {
-    const res = await fetch('/api/payt-administrations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
-    const data = await res.json().catch(()=>({}));
-    if(!res.ok || !data.administrations) return;
-    paytAdministrations = [...data.administrations].sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+    const all=[];
+    let cursor=null;
+    for(let i=0;i<50;i++){
+      const url=new URL(`${PAYT_BASE}/v1/administrations`);
+      url.searchParams.set('per_page','500');
+      if(cursor) url.searchParams.set('cursor',cursor);
+      const r=await fetch(url.toString(),{headers:{Authorization:`Bearer ${token}`,Accept:'application/json'}});
+      if(!r.ok) break;
+      const payload=await r.json().catch(()=>({}));
+      const page=Array.isArray(payload.data)?payload.data:[];
+      all.push(...page);
+      cursor=payload.pagination?.cursor;
+      if(page.length<500||!cursor) break;
+    }
+    paytAdministrations = all.map(a=>({id:a.id,name:a.name,internal_name:a.internal_name,status:a.status,city:a.city,country_code:a.country_code})).sort((a,b)=>a.name.localeCompare(b.name,'fr'));
     const ol = document.getElementById('companiesList');
     ol.innerHTML = paytAdministrations.map(a=>`<li>${esc(a.name)}${a.city ? ' — '+esc(a.city) : ''}</li>`).join('');
-    // Auto-fill target company if only one administration
     if(paytAdministrations.length===1){
       const only=paytAdministrations[0];
       S.invoices.forEach(inv=>{ if(!inv.targetCompany) inv.targetCompany={id:only.id,name:only.name}; });
@@ -1830,11 +1997,22 @@ if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https:
 function saveDataset(){
   try{
     const snap=S.invoices.map(inv=>({
-      fileName:inv.file.name,status:inv.status,data:inv.data,
+      fileName:inv.fileName,pdfUrl:inv.pdfUrl||null,status:inv.status,data:inv.data,
       errors:inv.errors,confidence:inv.confidence,rawNorm:inv.rawNorm,debtorType:inv.debtorType,
-      repaired:inv.repaired||false,targetCompany:inv.targetCompany||null,paytStep:inv.paytStep||null,paytStatus:inv.paytStatus||null,amountPaid:inv.amountPaid??null,baseOpenAmount:inv.baseOpenAmount??null,pdfError:inv.pdfError||null
+      repaired:inv.repaired||false,targetCompany:inv.targetCompany||null,paytStep:inv.paytStep||null,paytStatus:inv.paytStatus||null,amountPaid:inv.amountPaid??null,baseOpenAmount:inv.baseOpenAmount??null,pdfError:inv.pdfError||null,pushStatus:inv.pushStatus||null
     }));
     localStorage.setItem('factuscan_dataset',JSON.stringify(snap));
+    saveToDb(snap);
+  }catch(e){}
+}
+
+async function saveToDb(snap){
+  if(!snap||!snap.length) return;
+  try{
+    await fetch('/api/db-save',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({session_id:SESSION_ID,invoices:snap}),
+    });
   }catch(e){}
 }
 function clearDataset(){
@@ -1846,10 +2024,8 @@ function restoreDataset(){
     const snap=JSON.parse(localStorage.getItem('factuscan_dataset')||'[]');
     if(!snap.length) return;
     snap.forEach(d=>{
-      const stubFile={name:d.fileName,type:'application/pdf',arrayBuffer:()=>Promise.resolve(new ArrayBuffer(0))};
-      S.files.push(stubFile);
-      S.invoices.push({file:stubFile,status:d.status,data:d.data,errors:d.errors,
-        confidence:d.confidence,rawNorm:d.rawNorm,debtorType:d.debtorType,repaired:d.repaired,targetCompany:d.targetCompany||null,paytStep:d.paytStep||null,paytStatus:d.paytStatus||null,amountPaid:d.amountPaid??null,baseOpenAmount:d.baseOpenAmount??null,pdfError:d.pdfError||null});
+      S.invoices.push({fileName:d.fileName,pdfUrl:d.pdfUrl||null,status:d.status,data:d.data,errors:d.errors,
+        confidence:d.confidence,rawNorm:d.rawNorm,debtorType:d.debtorType,repaired:d.repaired,targetCompany:d.targetCompany||null,paytStep:d.paytStep||null,paytStatus:d.paytStatus||null,amountPaid:d.amountPaid??null,baseOpenAmount:d.baseOpenAmount??null,pdfError:d.pdfError||null,pushStatus:d.pushStatus||null});
     });
     document.getElementById('screen-upload').classList.add('out');
     setTimeout(()=>{
@@ -1870,8 +2046,8 @@ function restoreDataset(){
 if(sessionStorage.getItem('adminAuth')==='1'){
   document.getElementById('btnSettings').style.display='';
 }
-console.log('%cFactuScan — version 70','color:#55D6DE;font-weight:700;font-size:13px;');
+console.log('%cFactuScan — version 71','color:#55D6DE;font-weight:700;font-size:13px;');
 </script>
-<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 70</div>
+<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 71</div>
 </body>
 </html>
