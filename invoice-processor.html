@@ -162,7 +162,7 @@ html,body{overflow:hidden;}
 /* EXPORT */
 #screen-export{position:fixed;inset:0;background:#fff;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .2s;overflow-y:auto;z-index:30;}
 #screen-export.show{opacity:1;pointer-events:all;}
-.exp-wrap{width:80vw;max-width:80vw;margin:0 auto;padding:2.5rem 2rem 4rem;}
+.exp-wrap{width:90vw;max-width:90vw;margin:0 auto;padding:2.5rem 2rem 4rem;}
 .exp-title{font-size:22px;font-weight:700;margin-bottom:4px;}
 .exp-sub{font-size:14px;color:var(--muted);margin-bottom:1.75rem;}
 .exp-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1.75rem;}
@@ -400,23 +400,6 @@ html,body{overflow:hidden;}
       <button class="btn btn-neutral" onclick="confirmRestart()">Nouvelle session</button>
     </div>
     <div class="push-summary" id="pushSummary"></div>
-    <div style="margin-top:1.25rem;padding:14px 16px;background:rgba(85,214,222,0.08);border:1px solid rgba(85,214,222,0.30);border-radius:var(--radius-lg);font-size:13px;color:var(--navy);line-height:1.6;">
-      💡 En téléchargeant les éléments vous allez obtenir un fichier <strong>.zip</strong> contenant vos factures PDF renommées + un fichier <strong>CSV</strong>. Ces 2 documents sont nécessaires pour réaliser une importation manuelle sur Payt.
-    </div>
-    <div style="margin-top:1rem;background:#122C43;border-radius:var(--radius-lg);padding:14px 16px;display:flex;align-items:flex-start;gap:12px;">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;margin-top:2px;" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-      </svg>
-      <div style="font-size:12px;color:#fff;line-height:1.6;">
-        Les factures sont envoyées à un serveur via une connexion chiffrée HTTPS, et disparaissent dès que :
-        <ul style="list-style:none;margin:6px 0 6px;padding:0;display:flex;flex-direction:column;gap:4px;">
-          <li style="display:flex;align-items:center;gap:6px;"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#55D6DE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h8M7 3l3 3-3 3"/></svg>Vous fermez cet onglet</li>
-          <li style="display:flex;align-items:center;gap:6px;"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#55D6DE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h8M7 3l3 3-3 3"/></svg>Vous cliquez sur "Nouvelle session" ou "Quitter la session"</li>
-          <li style="display:flex;align-items:center;gap:6px;"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#55D6DE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h8M7 3l3 3-3 3"/></svg>10 minutes d'inactivité s'écoulent</li>
-        </ul>
-        Aucune facture ni aucune donnée n'est conservée par le serveur après traitement.
-      </div>
-    </div>
   </div>
 </div>
 
