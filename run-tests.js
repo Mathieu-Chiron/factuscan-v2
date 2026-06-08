@@ -1850,6 +1850,90 @@ suite('PAYT — montant réduit après applyAmountPaid transmis correctement', (
   test('paiement total → "0" envoyé à PAYT',                String(i.data.invoice_open_amount_inc_vat), '0');
 });
 
+/* ══ Pipeline complet : applyAmountPaid → payload frontend → buildApiPaytBody ══
+ * Reproduit exactement le chemin de données :
+ *   1. Invoice frontend (inv.data.invoice_open_amount_inc_vat)
+ *   2. applyAmountPaid modifie inv.data.invoice_open_amount_inc_vat
+ *   3. Construction du payload (flattening comme dans pushToPayt())
+ *   4. buildApiPaytBody construit le corps envoyé à PAYT
+ *   → Vérifie que book_amount_open / amount_open reflètent le paiement
+ */
+
+function mkFullInv(totalAmt, openAmt) {
+  return {
+    data: {
+      invoice_number: 'F-001',
+      invoice_date: '2024-01-15',
+      invoice_due_date: '2024-02-15',
+      invoice_total_amount_inc_vat: totalAmt,
+      invoice_open_amount_inc_vat: openAmt,
+    },
+    amountPaid: null,
+    baseOpenAmount: null,
+    paytStatus: null,
+    debtorType: 'entreprise',
+    targetCompany: { id: 'ADM-1', name: 'Société A' },
+  };
+}
+
+function buildFrontendPayload(inv) {
+  // Mirrors pushToPayt() in invoice-processor.html (line ~1549)
+  return {
+    administration_id:           inv.targetCompany.id,
+    invoice_number:              inv.data.invoice_number,
+    invoice_date:                inv.data.invoice_date,
+    invoice_due_date:            inv.data.invoice_due_date,
+    invoice_total_amount_inc_vat: inv.data.invoice_total_amount_inc_vat,
+    invoice_open_amount_inc_vat:  inv.data.invoice_open_amount_inc_vat,
+    currency_code:               'EUR',
+    debtor_number:               'DEB-001',
+    debtor_name:                 'Client Test',
+    debtor_is_company:           inv.debtorType === 'entreprise',
+  };
+}
+
+suite('Pipeline complet — paiement partiel → book_amount_open réduit', () => {
+  let inv, payload, body;
+
+  // Paiement partiel
+  inv = mkFullInv(1000, 1000); applyAmountPaid(inv, 400);
+  payload = buildFrontendPayload(inv);
+  body = buildApiPaytBody(payload);
+  test('paiement partiel — book_amount_open = "600"',  body.book_amount_open, '600');
+  test('paiement partiel — amount_open = "600"',        body.amount_open,      '600');
+  test('paiement partiel — book_amount_total inchangé', body.book_amount_total,'1000');
+  test('paiement partiel — amount_total inchangé',      body.amount_total,     '1000');
+
+  // Paiement total (montant = suspens)
+  inv = mkFullInv(750, 750); applyAmountPaid(inv, 750);
+  payload = buildFrontendPayload(inv);
+  body = buildApiPaytBody(payload);
+  test('paiement total — book_amount_open = "0"',       body.book_amount_open, '0');
+  test('paiement total — amount_open = "0"',             body.amount_open,      '0');
+  test('paiement total — book_amount_total inchangé',    body.book_amount_total,'750');
+
+  // Paiement total sur facture avec suspens < total (déjà partiel)
+  inv = mkFullInv(1000, 600); applyAmountPaid(inv, 600);
+  payload = buildFrontendPayload(inv);
+  body = buildApiPaytBody(payload);
+  test('suspens partiel soldé — book_amount_open = "0"', body.book_amount_open, '0');
+  test('suspens partiel soldé — amount_open = "0"',      body.amount_open,      '0');
+  test('suspens partiel soldé — book_amount_total = "1000"', body.book_amount_total, '1000');
+
+  // Paiement centimes
+  inv = mkFullInv(1500.99, 1500.99); applyAmountPaid(inv, 1000.50);
+  payload = buildFrontendPayload(inv);
+  body = buildApiPaytBody(payload);
+  test('paiement centimes — book_amount_open = "500.49"', body.book_amount_open, '500.49');
+
+  // Sans paiement renseigné — aucune déduction
+  inv = mkFullInv(800, 800);
+  payload = buildFrontendPayload(inv);
+  body = buildApiPaytBody(payload);
+  test('sans amountPaid — book_amount_open inchangé = "800"', body.book_amount_open, '800');
+  test('sans amountPaid — amount_open inchangé = "800"',       body.amount_open,      '800');
+});
+
 
 /* ══ AUTO-FILL targetCompany ══ */
 
