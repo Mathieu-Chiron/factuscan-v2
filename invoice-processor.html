@@ -248,12 +248,11 @@ html,body{overflow:hidden;}
 
 <!-- ═══ UPLOAD ════════════════════════════════════ -->
 <div id="screen-upload" class="z-content">
+  <div style="position:fixed;top:16px;right:20px;">
+    <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
+  </div>
   <div class="dz-title">FactuScan V2</div>
   <div class="dz-sub">Uploadez vos factures, vérifiez les données extraites, obtenez les fichiers prêts à importer.</div>
-  <div id="companiesBox" style="margin-bottom:1.5rem;width:min(500px,90vw);border:1px solid blue;border-radius:var(--radius-lg);padding:16px 20px;background:rgba(255,255,255,0.65);backdrop-filter:blur(12px);">
-    <h3 style="font-size:15px;font-weight:700;color:var(--navy);margin:0 0 10px;">Liste de vos entreprises connectées par API</h3>
-    <ol id="companiesList" style="margin:0;padding-left:20px;font-size:13px;color:var(--navy);line-height:1.8;"></ol>
-  </div>
   <div class="dropzone" id="dropzone"
     onclick="document.getElementById('fi1').click()"
     ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
@@ -271,20 +270,6 @@ html,body{overflow:hidden;}
       <span id="restoreLabel">Charger le dataset sauvegardé</span>
       <button onclick="event.stopPropagation();clearDataset()" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--muted);font-size:11px;font-family:var(--font);padding:0;" title="Effacer">✕ Effacer</button>
     </button>
-  </div>
-  <div style="margin-top:1.5rem;width:min(500px,90vw);background:#122C43;border-radius:var(--radius-lg);padding:14px 16px;display:flex;align-items:flex-start;gap:12px;">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;margin-top:2px;" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-    </svg>
-    <div style="font-size:12px;color:#fff;line-height:1.6;">
-      Les factures sont envoyées à un serveur via une connexion chiffrée HTTPS, et disparaissent dès que :
-      <ul style="list-style:none;margin:6px 0 6px;padding:0;display:flex;flex-direction:column;gap:4px;">
-        <li style="display:flex;align-items:center;gap:6px;"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#55D6DE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h8M7 3l3 3-3 3"/></svg>Vous fermez cet onglet</li>
-        <li style="display:flex;align-items:center;gap:6px;"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#55D6DE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h8M7 3l3 3-3 3"/></svg>Vous cliquez sur "Nouvelle session" ou "Quitter la session"</li>
-        <li style="display:flex;align-items:center;gap:6px;"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#55D6DE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h8M7 3l3 3-3 3"/></svg>10 minutes d'inactivité s'écoulent</li>
-      </ul>
-      Aucune facture ni aucune donnée n'est conservée par le serveur après traitement.
-    </div>
   </div>
 </div>
 
@@ -380,7 +365,7 @@ html,body{overflow:hidden;}
 <div id="screen-export" class="z-content">
   <div class="exp-wrap">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.5rem;">
-      <div><div class="exp-title">Export</div><div class="exp-sub">Résumé des factures traitées.</div></div>
+      <div><div class="exp-title">Mes factures</div><div class="exp-sub">Résumé des factures traitées.</div></div>
       <button class="btn btn-neutral btn-sm" onclick="hideExport()">← Retour</button>
     </div>
     <div class="exp-stats" id="expStats"></div>
@@ -763,10 +748,12 @@ async function handleFiles(list) {
 function renderSidebar() {
   const l=document.getElementById('sbList');l.innerHTML='';
   const il=document.getElementById('sbIgnList');il.innerHTML='';
-  const active=S.invoices.filter((_,i)=>S.invoices[i].status!=='skipped');
-  const skipped=S.invoices.filter(inv=>inv.status==='skipped');
+  const newInvs=S.invoices.filter(inv=>!inv.fromRestore);
+  const active=newInvs.filter(inv=>inv.status!=='skipped');
+  const skipped=newInvs.filter(inv=>inv.status==='skipped');
   document.getElementById('sbCount').textContent=`(${active.length})`;
   S.invoices.forEach((inv,i)=>{
+    if(inv.fromRestore) return; // factures déjà sauvegardées, visibles uniquement dans l'export
     if(inv.status==='skipped') return; // rendered in ignored section
     const el=document.createElement('div');
     const isVal=inv.status==='validated';
@@ -783,7 +770,7 @@ function renderSidebar() {
     sec.classList.add('has-items');
     document.getElementById('sbIgnCount').textContent=`(${skipped.length})`;
     S.invoices.forEach((inv,i)=>{
-      if(inv.status!=='skipped') return;
+      if(inv.fromRestore||inv.status!=='skipped') return;
       const el=document.createElement('div');
       el.className='sb-ign-item'+(i===S.cur?' active':'');
       el.innerHTML=`<div class="inv-dot s-skipped"></div><span class="sb-ign-name" title="${esc(inv.fileName)}">${esc(shortName(inv.fileName))}</span>`;
@@ -1523,7 +1510,7 @@ function showExport(){
   renderExpTable();
   document.getElementById('screen-export').classList.add('show');
 }
-function hideExport(){document.getElementById('screen-export').classList.remove('show');}
+function hideExport(){document.getElementById('screen-export').classList.remove('show');document.getElementById('screen-main').classList.remove('in');document.getElementById('screen-upload').style.display='';setTimeout(()=>document.getElementById('screen-upload').classList.remove('out'),10);}
 
 /* ══ PUSH TO PAYT ════════════════════════════════════ */
 async function pushToPayt(){
@@ -1950,7 +1937,7 @@ function restoreDataset(){
         confidence:d.confidence,rawNorm:d.rawNorm||{},debtorType:d.debtorType,repaired:d.repaired||false,
         targetCompany:d.targetCompany||null,paytStep:d.paytStep||null,paytStatus:d.paytStatus||null,
         amountPaid:d.amountPaid??null,baseOpenAmount:d.baseOpenAmount??null,pdfError:d.pdfError||null,
-        pushStatus:d.pushStatus||null,uploadDate:d.uploadDate||null});
+        pushStatus:d.pushStatus||null,uploadDate:d.uploadDate||null,fromRestore:true});
     });
     // Aller directement à l'écran export
     document.getElementById('screen-upload').style.display='none';
