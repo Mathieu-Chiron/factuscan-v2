@@ -721,7 +721,7 @@ async function handleFiles(list) {
   accepted.forEach(f=>{
     if(S.invoices.some(x=>x.fileName===f.name)){duplicates.push(f.name);}
     else{
-      const inv={fileName:f.name,pdfUrl:null,status:'pending',data:{},errors:{},confidence:null,rawNorm:{},debtorType:null,targetCompany:(paytAdministrations.length===1?{id:paytAdministrations[0].id,name:paytAdministrations[0].name}:null),paytStep:null,paytStatus:null,amountPaid:null};
+      const inv={fileName:f.name,pdfUrl:null,status:'pending',data:{},errors:{},confidence:null,rawNorm:{},debtorType:null,targetCompany:(paytAdministrations.length===1?{id:paytAdministrations[0].id,name:paytAdministrations[0].name}:null),paytStep:null,paytStatus:null,amountPaid:null,uploadDate:new Date().toISOString().slice(0,10)};
       S.invoices.push(inv);
       toUpload.push({f,inv});
     }
@@ -1260,6 +1260,7 @@ async function reExtract(){
 const EXP_COLS=[
   {label:'_chk',              key:'_checkbox',                     type:'checkbox'},
   {label:'',                  key:'_push_status',                  type:'push'},
+  {label:'Date upload',       key:'_upload_date',                  type:'date'},
   {label:'Type',              key:'_type',                         type:'text'},
   {label:'Débiteur',          key:'_debtor',                       type:'text'},
   {label:'N° de facture',     key:'invoice_number',                type:'text'},
@@ -1285,6 +1286,7 @@ function getExpRows(){
     invoice_open_amount_inc_vat:  inv.data.invoice_open_amount_inc_vat??'—',
     _amount_paid: inv.amountPaid ?? '',
     _push_status: inv.pushStatus || null,
+    _upload_date: inv.uploadDate || '—',
     _payt_status: inv.paytStatus || '—',
     _target_company: inv.targetCompany ? inv.targetCompany.name : '—',
     _inv: inv,
@@ -1321,11 +1323,17 @@ function renderExpTable(){
   }).join('')+'</tr>';
   tbody.innerHTML='';
   const rows=sortExpRows(getExpRows());
+  // Build date → color map (cycle green / blue per unique upload date)
+  const DATE_PALETTE=['rgba(50,192,130,0.10)','rgba(59,130,246,0.10)'];
+  const uniqueDates=[...new Set(rows.map(r=>r._upload_date).filter(d=>d&&d!=='—'))].sort();
+  const dateColorMap={};
+  uniqueDates.forEach((d,i)=>{dateColorMap[d]=DATE_PALETTE[i%DATE_PALETTE.length];});
   rows.forEach(row=>{
     const inv=row._inv;
     const invIdx=S.invoices.indexOf(inv);
     const tr=document.createElement('tr');
-    if(inv.status==='validated') tr.style.cssText='background:var(--teal-bg);';
+    const rowBg=dateColorMap[row._upload_date];
+    if(rowBg) tr.style.background=rowBg;
     const statusBadge=`<span class="badge ${inv.status==='validated'?'b-ok':'b-warn'}">${esc(row._status)}</span>`;
     tr.innerHTML=EXP_COLS.map(col=>{
       if(col.key==='_checkbox'){
@@ -1350,6 +1358,12 @@ function renderExpTable(){
         }
         else if(ps==='error') icon=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" title="${esc(row._inv.pushError||'')}"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
         return `<td style="width:24px;text-align:center;padding:8px 6px;">${icon}</td>`;
+      }
+      if(col.key==='_upload_date'){
+        const d=row._upload_date;
+        if(!d||d==='—') return `<td style="color:var(--muted);">—</td>`;
+        const [y,m,day]=d.split('-');
+        return `<td style="white-space:nowrap;font-variant-numeric:tabular-nums;">${day}/${m}/${y}</td>`;
       }
       if(col.key==='_amount_paid'){
         const v=row._inv.amountPaid??'';
@@ -1851,7 +1865,7 @@ function saveDataset(){
     const snap=S.invoices.map(inv=>({
       fileName:inv.fileName,pdfUrl:inv.pdfUrl||null,status:inv.status,data:inv.data,
       errors:inv.errors,confidence:inv.confidence,rawNorm:inv.rawNorm,debtorType:inv.debtorType,
-      repaired:inv.repaired||false,targetCompany:inv.targetCompany||null,paytStep:inv.paytStep||null,paytStatus:inv.paytStatus||null,amountPaid:inv.amountPaid??null,baseOpenAmount:inv.baseOpenAmount??null,pdfError:inv.pdfError||null,pushStatus:inv.pushStatus||null
+      repaired:inv.repaired||false,targetCompany:inv.targetCompany||null,paytStep:inv.paytStep||null,paytStatus:inv.paytStatus||null,amountPaid:inv.amountPaid??null,baseOpenAmount:inv.baseOpenAmount??null,pdfError:inv.pdfError||null,pushStatus:inv.pushStatus||null,uploadDate:inv.uploadDate||null
     }));
     localStorage.setItem('factuscan_dataset',JSON.stringify(snap));
     saveToDb(snap);
@@ -1877,7 +1891,7 @@ function restoreDataset(){
     if(!snap.length) return;
     snap.forEach(d=>{
       S.invoices.push({fileName:d.fileName,pdfUrl:d.pdfUrl||null,status:d.status,data:d.data,errors:d.errors,
-        confidence:d.confidence,rawNorm:d.rawNorm,debtorType:d.debtorType,repaired:d.repaired,targetCompany:d.targetCompany||null,paytStep:d.paytStep||null,paytStatus:d.paytStatus||null,amountPaid:d.amountPaid??null,baseOpenAmount:d.baseOpenAmount??null,pdfError:d.pdfError||null,pushStatus:d.pushStatus||null});
+        confidence:d.confidence,rawNorm:d.rawNorm,debtorType:d.debtorType,repaired:d.repaired,targetCompany:d.targetCompany||null,paytStep:d.paytStep||null,paytStatus:d.paytStatus||null,amountPaid:d.amountPaid??null,baseOpenAmount:d.baseOpenAmount??null,pdfError:d.pdfError||null,pushStatus:d.pushStatus||null,uploadDate:d.uploadDate||null});
     });
     document.getElementById('screen-upload').classList.add('out');
     setTimeout(()=>{

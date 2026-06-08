@@ -36,10 +36,10 @@ export default async function handler(req, res) {
 
     const rows = await sql`
       SELECT file_name, pdf_url, status, data, debtor_type,
-             target_company, payt_status, amount_paid, push_status
+             target_company, payt_status, amount_paid, push_status, created_at
       FROM invoices
       WHERE session_id = ${session_id}
-      ORDER BY updated_at ASC
+      ORDER BY created_at ASC
     `;
 
     const invoices = rows.map(r => ({
@@ -59,6 +59,7 @@ export default async function handler(req, res) {
       baseOpenAmount:null,
       pdfError:      null,
       pushStatus:    r.push_status || null,
+      uploadDate:    r.created_at ? new Date(r.created_at).toISOString().slice(0,10) : null,
     }));
 
     return res.status(200).json({ invoices });
