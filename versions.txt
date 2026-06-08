@@ -54,3 +54,4 @@ version 53 => resolve merge conflict: keep full 38-column Payt schema
 version 54 => fix CSV export to use ; as separator for both header and rows
 version 55 => add debtor_email field with email validation and tests
 version 56 => fixed country iso code, changed invoice name for success on payt
+version 57 => PDF → Vercel Blob (public), metadata → Neon Postgres, inv.file replaced by inv.pdfUrl + inv.fileName
