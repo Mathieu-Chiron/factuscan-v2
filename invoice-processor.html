@@ -1356,7 +1356,7 @@ function renderExpTable(){
             icon=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`;
           }
         }
-        else if(ps==='error') icon=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" title="${esc(row._inv.pushError||'')}"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
+        else if(ps==='error') icon=`<span title="${esc(row._inv.pushError||'Erreur inconnue')}" style="display:inline-flex;align-items:center;cursor:default;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg></span>`;
         return `<td style="width:24px;text-align:center;padding:8px 6px;">${icon}</td>`;
       }
       if(col.key==='_upload_date'){
