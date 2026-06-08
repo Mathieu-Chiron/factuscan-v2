@@ -23,6 +23,18 @@ const PAYT_BASE = process.env.PAYT_PROXY_URL || 'https://api.paytsoftware.com/ap
 const PROXY_SECRET = process.env.PROXY_SECRET;
 const ts = () => new Date().toISOString().replace('T',' ').slice(0,19);
 
+async function fetchWithRetry(url, opts, maxRetries = 3) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const r = await fetch(url, opts);
+    if (r.status !== 429) return r;
+    const retryAfter = parseInt(r.headers.get('retry-after') || '2', 10);
+    const wait = (retryAfter || 2) * 1000 * Math.pow(2, attempt);
+    console.log(`[payt-push ${ts()}] 429 rate limit — retry in ${wait}ms (attempt ${attempt + 1}/${maxRetries})`);
+    if (attempt < maxRetries) await new Promise(res => setTimeout(res, wait));
+    else return r; // return last 429 after exhausting retries
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -68,7 +80,7 @@ export default async function handler(req, res) {
     const payload = { administration_id: administrationId, contacts: [...contactMap.values()] };
     try {
       console.log(`[payt-push ${ts()}] CONTACT payload:`, JSON.stringify(payload));
-      const r = await fetch(`${PAYT_BASE}/v1/contacts`, { method: 'POST', headers, body: JSON.stringify(payload) });
+      const r = await fetchWithRetry(`${PAYT_BASE}/v1/contacts`, { method: 'POST', headers, body: JSON.stringify(payload) });
       const data = await r.json().catch(() => ({}));
       console.log(`[payt-push ${ts()}] CONTACT response`, r.status, JSON.stringify(data));
       if (!r.ok) {
@@ -109,7 +121,7 @@ export default async function handler(req, res) {
     const payload = { administration_id: administrationId, debtors: [...debtorMap.values()] };
     try {
       console.log(`[payt-push ${ts()}] DEBTOR payload:`, JSON.stringify(payload));
-      const r = await fetch(`${PAYT_BASE}/v1/debtors`, { method: 'POST', headers, body: JSON.stringify(payload) });
+      const r = await fetchWithRetry(`${PAYT_BASE}/v1/debtors`, { method: 'POST', headers, body: JSON.stringify(payload) });
       const data = await r.json().catch(() => ({}));
       console.log(`[payt-push ${ts()}] DEBTOR response`, r.status, JSON.stringify(data));
       if (!r.ok) {
@@ -153,7 +165,7 @@ export default async function handler(req, res) {
 
     try {
       console.log(`[payt-push ${ts()}] INVOICE payload:`, JSON.stringify(payload));
-      const r = await fetch(`${PAYT_BASE}/v1/invoices`, { method: 'POST', headers, body: JSON.stringify(payload) });
+      const r = await fetchWithRetry(`${PAYT_BASE}/v1/invoices`, { method: 'POST', headers, body: JSON.stringify(payload) });
       const data = await r.json().catch(() => ({}));
       console.log(`[payt-push ${ts()}] INVOICE response`, r.status, JSON.stringify(data));
 

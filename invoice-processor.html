@@ -1363,6 +1363,14 @@ function renderExpTable(){
           `onchange="setAmountPaid(${invIdx},this.value)" onblur="setAmountPaid(${invIdx},this.value)">`+
           `<span style="font-size:12px;color:var(--muted);">€</span></div></td>`;
       }
+      if(col.type==='select'&&col.key==='_payt_status'){
+        const openAmt=parseFloat(inv.data.invoice_open_amount_inc_vat);
+        if(openAmt===0||inv.paytStatus==='Payée'){
+          return `<td style="min-width:112px;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#085041;background:rgba(50,192,130,0.12);border:1px solid rgba(50,192,130,0.30);border-radius:var(--radius);padding:3px 8px;white-space:nowrap;">`+
+            `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Payée</span></td>`;
+        }
+        return renderCselSimple(invIdx,col,row[col.key]);
+      }
       if(col.type==='select'&&col.key!=='_target_company') return renderCselSimple(invIdx,col,row[col.key]);
       if(col.key==='_target_company'){
         const cur=inv.targetCompany;
@@ -1518,7 +1526,7 @@ async function pushToPayt(){
   if(!token){alert('Token PAYT manquant. Reconnectez-vous via /payt-connect.html');return;}
 
   const toSend=S.invoices.filter(inv=>
-    inv.status==='validated' && inv.targetCompany && inv.pushStatus!=='success'
+    inv.status==='validated' && inv.targetCompany
   );
   if(!toSend.length){
     alert('Aucune facture validée avec une entreprise cible à envoyer.');return;
