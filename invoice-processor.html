@@ -1375,6 +1375,12 @@ function renderExpTable(){
       if(col.type==='select'&&col.key!=='_target_company') return renderCselSimple(invIdx,col,row[col.key]);
       if(col.key==='_target_company'){
         const cur=inv.targetCompany;
+        // Verrouillé après push réussi
+        if(inv.pushStatus==='success'){
+          return `<td style="min-width:180px;font-size:12px;color:var(--navy);display:flex;align-items:center;gap:5px;">` +
+            `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>` +
+            `${cur?esc(cur.name):'—'}</td>`;
+        }
         const valLabel=cur?esc(cur.name):'Choisir…';
         const valCls=cur?'':'placeholder';
         const opts=paytAdministrations.map(a=>
@@ -1534,6 +1540,9 @@ async function pushToPayt(){
   const btn=document.getElementById('btnPushPayt');
   btn.disabled=true;btn.textContent='Envoi en cours…';
 
+  // Sauvegarder toutes les factures en DB avant l'envoi (créer/mettre à jour)
+  saveDataset();
+
   // Mark all as sending
   toSend.forEach(inv=>{inv.pushStatus='sending';inv.pushError=null;});
   renderExpTable();
@@ -1673,8 +1682,7 @@ async function downloadAll(){
 }
 function dlBlob(b,n){const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
 function confirmRestart(){
-  if(!S.zipDownloaded){document.getElementById('restartWarnBg').classList.add('show');return;}
-  doRestart();
+  document.getElementById('restartWarnBg').classList.add('show');
 }
 function closeRestartWarn(){document.getElementById('restartWarnBg').classList.remove('show');}
 function doRestart(){closeRestartWarn();S.invoices=[];S.cur=-1;S.busy=false;S.zipDownloaded=false;hideExport();document.getElementById('screen-main').classList.remove('in');document.getElementById('screen-upload').style.display='';setTimeout(()=>document.getElementById('screen-upload').classList.remove('out'),10);}
@@ -1900,23 +1908,33 @@ function restoreDataset(){
     },280);
   }catch(e){}
 }
-(async function initRestoreBar(){
+(async function autoRestore(){
   try{
     // Priorité 1 : localStorage (immédiat)
-    const local=JSON.parse(localStorage.getItem('factuscan_dataset')||'[]');
-    if(local.length){
-      document.getElementById('restoreLabel').textContent=`Reprendre — ${local.length} facture${local.length>1?'s':''} sauvegardée${local.length>1?'s':''}`;
-      document.getElementById('restoreBtn').style.display='block';
-      return;
+    let snap=JSON.parse(localStorage.getItem('factuscan_dataset')||'[]');
+    // Priorité 2 : DB si localStorage vide
+    if(!snap.length){
+      const r=await fetch('/api/db-load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:USER_ID})});
+      if(r.ok){
+        const {invoices}=await r.json().catch(()=>({}));
+        if(invoices?.length){
+          snap=invoices;
+          localStorage.setItem('factuscan_dataset',JSON.stringify(snap));
+        }
+      }
     }
-    // Priorité 2 : DB (si localStorage vide)
-    const r=await fetch('/api/db-load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:USER_ID})});
-    if(!r.ok) return;
-    const {invoices}=await r.json().catch(()=>({}));
-    if(!invoices?.length) return;
-    localStorage.setItem('factuscan_dataset',JSON.stringify(invoices));
-    document.getElementById('restoreLabel').textContent=`Reprendre — ${invoices.length} facture${invoices.length>1?'s':''} sauvegardée${invoices.length>1?'s':''}`;
-    document.getElementById('restoreBtn').style.display='block';
+    if(!snap.length) return;
+    snap.forEach(d=>{
+      S.invoices.push({fileName:d.fileName,pdfUrl:d.pdfUrl||null,status:d.status,data:d.data,errors:d.errors||{},
+        confidence:d.confidence,rawNorm:d.rawNorm||{},debtorType:d.debtorType,repaired:d.repaired||false,
+        targetCompany:d.targetCompany||null,paytStep:d.paytStep||null,paytStatus:d.paytStatus||null,
+        amountPaid:d.amountPaid??null,baseOpenAmount:d.baseOpenAmount??null,pdfError:d.pdfError||null,
+        pushStatus:d.pushStatus||null,uploadDate:d.uploadDate||null});
+    });
+    // Aller directement à l'écran export
+    document.getElementById('screen-upload').style.display='none';
+    showExport();
+    updateSessionBanner();
   }catch(e){}
 })();
 if(sessionStorage.getItem('adminAuth')==='1'){
