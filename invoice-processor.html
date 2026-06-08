@@ -182,6 +182,10 @@ html,body{overflow:hidden;}
 .exp-actions{display:flex;gap:9px;flex-wrap:wrap;}
 .sort-hint{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-bottom:8px;}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* Custom tooltip */
+.tip{position:relative;display:inline-flex;align-items:center;cursor:default;}
+.tip::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:rgba(20,30,48,0.92);color:#fff;font-size:11px;font-family:var(--font);white-space:pre-wrap;max-width:240px;padding:5px 9px;border-radius:5px;pointer-events:none;opacity:0;transition:opacity .15s;z-index:200;line-height:1.4;}
+.tip:hover::after{opacity:1;}
 .push-summary{display:none;margin-top:10px;font-size:13px;padding:10px 14px;border-radius:var(--radius);}
 /* ── Searchable select (entreprise cible) ── */
 .csel{position:relative;min-width:160px;}
@@ -470,10 +474,10 @@ html,body{overflow:hidden;}
 <div class="modal-bg" id="restartWarnBg">
   <div class="modal" onclick="event.stopPropagation()" style="max-width:420px;">
     <div class="modal-title">Nouvelle session</div>
-    <div class="modal-sub">Vous n'avez pas encore téléchargé le fichier ZIP. Toutes les données de la session en cours seront perdues.</div>
+    <div class="modal-sub">Vous n'avez pas envoyé vos factures sur PAYT. Pour le faire, cliquez sur <strong>Envoyer vers PAYT</strong>. Vos factures sont de toute manière enregistrées sur cet espace. Vous pourrez les envoyer plus tard.</div>
     <div class="modal-foot">
       <button class="btn btn-neutral" onclick="closeRestartWarn()">Annuler</button>
-      <button class="btn btn-danger" onclick="doRestart()">Quitter sans télécharger</button>
+      <button class="btn btn-primary" onclick="goToUpload()">Ajoutez de nouvelles factures</button>
     </div>
   </div>
 </div>
@@ -714,7 +718,7 @@ async function handleFiles(list) {
   if(limit.totalExceeded&&limit.accepted===0){showBatchLimitPopup(`Vous avez atteint la limite de ${TOTAL_LIMIT} factures. Veuillez exporter vos données avant d'en ajouter de nouvelles.`);return;}
   const accepted=limit.totalExceeded?pdfs.slice(0,limit.accepted):pdfs;
   if(limit.totalExceeded) showBatchLimitPopup(`Limite de ${TOTAL_LIMIT} factures atteinte : seuls ${limit.accepted} fichier(s) ont été ajoutés.`);
-  const firstBatch = S.invoices.length===0 && accepted.length>0;
+  const needsTransition = !document.getElementById('screen-main').classList.contains('in');
   const duplicates=[];
   const toUpload=[];
   accepted.forEach(f=>{
@@ -731,7 +735,7 @@ async function handleFiles(list) {
   renderSidebar(); updateBar();
   if (S.cur===-1) selectInv(0);
 
-  if (firstBatch) {
+  if (needsTransition) {
     document.getElementById('screen-upload').classList.add('out');
     await new Promise(r=>setTimeout(r,280));
     document.getElementById('screen-upload').style.display='none';
@@ -1347,7 +1351,7 @@ function renderExpTable(){
         if(ps==='sending') icon=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
         else if(ps==='success'){
           if(row._inv.pdfError){
-            icon=`<span title="Facture créée mais PDF non attaché : ${esc(row._inv.pdfError||'')}" style="display:inline-flex;align-items:center;gap:2px;cursor:default;">`+
+            icon=`<span class="tip" data-tip="Facture créée mais PDF non attaché :\n${esc(row._inv.pdfError||'')}" style="gap:2px;">`+
               `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`+
               `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#E07B00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>`+
               `</span>`;
@@ -1355,7 +1359,7 @@ function renderExpTable(){
             icon=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`;
           }
         }
-        else if(ps==='error') icon=`<span title="${esc(row._inv.pushError||'Erreur inconnue')}" style="display:inline-flex;align-items:center;cursor:default;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg></span>`;
+        else if(ps==='error') icon=`<span class="tip" data-tip="${esc(row._inv.pushError||'Erreur inconnue')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg></span>`;
         return `<td style="width:24px;text-align:center;padding:8px 6px;">${icon}</td>`;
       }
       if(col.key==='_upload_date'){
@@ -1581,14 +1585,30 @@ async function pushToPayt(){
       body:JSON.stringify({token,invoices:payload}),
     });
     const data=await res.json().catch(()=>({}));
+    console.log('[payt-push] HTTP', res.status, data);
+
+    if(!res.ok){
+      const msg=`HTTP ${res.status} — ${data.message||data.error||'Erreur serveur'}`;
+      toSend.forEach(inv=>{inv.pushStatus='error';inv.pushError=msg;});
+      saveDataset();renderExpTable();
+      throw new Error(msg);
+    }
+
     const results=data.results||{};
 
     let ok=0,errors=0;
     toSend.forEach(inv=>{
       const r=results[inv.data.invoice_number];
-      if(!r){inv.pushStatus='error';inv.pushError='Pas de réponse';errors++;return;}
+      if(!r){inv.pushStatus='error';inv.pushError=`Pas de résultat pour n° ${inv.data.invoice_number||'?'}`;errors++;return;}
       if(r.success){inv.pushStatus='success';ok++;}
-      else{inv.pushStatus='error';inv.pushError=(r.errors||[]).join(' | ');errors++;}
+      else{
+        const errs=(r.errors||[]);
+        const warns=(r.warnings||[]);
+        const parts=[...errs,...(warns.length&&!errs.length?warns:[])];
+        inv.pushStatus='error';
+        inv.pushError=parts.length?parts.join('\n'):`PAYT a refusé la facture (aucun détail fourni)`;
+        errors++;
+      }
     });
     saveDataset();
     renderExpTable();
@@ -1627,8 +1647,9 @@ async function pushToPayt(){
       summary.textContent=`${ok} succès, ${errors} erreur${errors>1?'s':''}${pdfErrors?`, ${pdfErrors} PDF non attaché${pdfErrors>1?'s':''}`:''}. Survolez les icônes pour voir le détail.`;
     }
   }catch(e){
-    toSend.forEach(inv=>{inv.pushStatus='error';inv.pushError='Erreur réseau';});
-    renderExpTable();
+    console.error('[payt-push] exception:', e);
+    toSend.forEach(inv=>{if(inv.pushStatus==='sending'){inv.pushStatus='error';inv.pushError=`Erreur réseau : ${e.message||e}`;}});
+    saveDataset();renderExpTable();
   }finally{
     btn.disabled=false;btn.textContent='Envoyer vers PAYT';
   }
@@ -1685,7 +1706,7 @@ function confirmRestart(){
   document.getElementById('restartWarnBg').classList.add('show');
 }
 function closeRestartWarn(){document.getElementById('restartWarnBg').classList.remove('show');}
-function doRestart(){closeRestartWarn();S.invoices=[];S.cur=-1;S.busy=false;S.zipDownloaded=false;hideExport();document.getElementById('screen-main').classList.remove('in');document.getElementById('screen-upload').style.display='';setTimeout(()=>document.getElementById('screen-upload').classList.remove('out'),10);}
+function goToUpload(){closeRestartWarn();hideExport();document.getElementById('screen-main').classList.remove('in');document.getElementById('screen-upload').style.display='';setTimeout(()=>document.getElementById('screen-upload').classList.remove('out'),10);}
 
 /* ══ MODAL ═══════════════════════════════════════════ */
 function openModal(){
