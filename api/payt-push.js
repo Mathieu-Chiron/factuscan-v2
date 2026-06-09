@@ -50,7 +50,7 @@ export default async function handler(req, res) {
   };
 
   const results = {};
-  invoices.forEach(inv => { results[inv.invoice_number] = { success: false, errors: [], warnings: [] }; });
+  invoices.forEach(inv => { results[inv.invoice_number] = { success: false, errors: [], warnings: [], credit_note: null }; });
 
   // ── Step 1: upsert contacts (deduplicated by contact_identifier per administration) ──
   const contactsByAdmin = {};
@@ -248,6 +248,99 @@ export default async function handler(req, res) {
             }
           } catch (e) {
             results[inv.invoice_number].warnings.push('Impossible d\'enregistrer le paiement sur PAYT');
+          }
+        }
+
+        // ── Step 5: credit notes for "Clôturée" invoices ──
+        const clotureeeBatch = batch.filter(inv =>
+          inv.payt_status === 'Clôturée' && !results[inv.invoice_number].errors.length
+        );
+        console.log(`[payt-push ${ts()}] cloturee batch size: ${clotureeeBatch.length}`);
+
+        for (const inv of clotureeeBatch) {
+          const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
+          if (effectiveOpen === 0) {
+            console.log(`[payt-push ${ts()}] ${inv.invoice_number} — open=0, pas d'avoir nécessaire`);
+            continue;
+          }
+          const creditNumber = `AVOIR-${inv.invoice_number}`;
+          console.log(`[payt-push ${ts()}] création avoir ${creditNumber} pour montant=${effectiveOpen}`);
+
+          try {
+            // ── 5a: POST credit note invoice ──
+            const cnPayload = {
+              administration_id: administrationId,
+              invoices: [{
+                debtor_number:     inv.debtor_number,
+                invoice_number:    creditNumber,
+                invoice_date:      today,
+                due_date:          today,
+                book_amount_total: String(-effectiveOpen),
+                amount_total:      String(-effectiveOpen),
+                book_amount_open:  '0',
+                amount_open:       '0',
+                currency_code:     inv.currency_code || 'EUR',
+              }],
+            };
+            console.log(`[payt-push ${ts()}] CREDIT NOTE payload:`, JSON.stringify(cnPayload));
+            const cnr = await fetchWithRetry(`${PAYT_BASE}/v1/invoices`, { method: 'POST', headers, body: JSON.stringify(cnPayload) });
+            const cndata = await cnr.json().catch(() => ({}));
+            console.log(`[payt-push ${ts()}] CREDIT NOTE response`, cnr.status, JSON.stringify(cndata));
+
+            const cnErrors = cndata?.errors?.[creditNumber] || [];
+            if (!cnr.ok && !cndata?.errors) {
+              results[inv.invoice_number].warnings.push(
+                `Avoir non créé [${cnr.status}]: ${cndata?.error?.message || cndata?.message || 'Erreur inconnue'}`
+              );
+              continue;
+            }
+            if (cnErrors.length) {
+              results[inv.invoice_number].warnings.push(`Avoir non créé: ${cnErrors.join(', ')}`);
+              continue;
+            }
+
+            // ── 5b: GET original invoice PAYT id → PUT /v1/payments to zero it out ──
+            const getUrl2 = `${PAYT_BASE}/v1/invoices?administration_id=${encodeURIComponent(administrationId)}`;
+            const gr2 = await fetchWithRetry(getUrl2, { method: 'GET', headers });
+            const gdata2 = await gr2.json().catch(() => ({}));
+            console.log(`[payt-push ${ts()}] GET (avoir) invoice ${inv.invoice_number}:`, gr2.status);
+
+            const list2 = gdata2?.data ?? gdata2?.invoices ?? (Array.isArray(gdata2) ? gdata2 : []);
+            const found2 = list2.find?.(i => i.invoice_number === inv.invoice_number);
+            const paytId2 = found2?.id ?? found2?.invoice_id;
+            console.log(`[payt-push ${ts()}] invoice_id (avoir) for ${inv.invoice_number}: ${paytId2 ?? 'NOT FOUND'}`);
+
+            if (!paytId2) {
+              results[inv.invoice_number].warnings.push(`Avoir créé (${creditNumber}) mais solde original non soldé : ID PAYT introuvable`);
+              continue;
+            }
+
+            const cn_pmPayload = {
+              administration_id: administrationId,
+              payments: [{
+                invoice_id:        paytId2,
+                amount:            String(effectiveOpen),
+                book_amount:       String(effectiveOpen),
+                origin_identifier: `AVOIR-${inv.invoice_number}`,
+                cost_type:         'principal',
+                transaction_type:  'credit',
+                payment_date:      today,
+              }],
+            };
+            console.log(`[payt-push ${ts()}] AVOIR PAYMENT payload:`, JSON.stringify(cn_pmPayload));
+            const cn_pr = await fetchWithRetry(`${PAYT_BASE}/v1/payments`, { method: 'PUT', headers, body: JSON.stringify(cn_pmPayload) });
+            const cn_pdata = await cn_pr.json().catch(() => ({}));
+            console.log(`[payt-push ${ts()}] AVOIR PAYMENT response`, cn_pr.status, JSON.stringify(cn_pdata));
+
+            if (!cn_pr.ok) {
+              results[inv.invoice_number].warnings.push(
+                `Avoir créé (${creditNumber}) mais solde non soldé [${cn_pr.status}]: ${cn_pdata?.error?.message || cn_pdata?.message || 'Erreur inconnue'}`
+              );
+            } else {
+              results[inv.invoice_number].credit_note = creditNumber;
+            }
+          } catch (e) {
+            results[inv.invoice_number].warnings.push(`Erreur création avoir: ${e?.message || e}`);
           }
         }
       }
