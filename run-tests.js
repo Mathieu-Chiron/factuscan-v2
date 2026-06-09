@@ -1817,10 +1817,17 @@ function buildApiPaytBody(inv) {
     invoice_number:    inv.invoice_number,
     invoice_date:      inv.invoice_date,
     due_date:          inv.invoice_due_date,
-    book_amount_total: String(inv.invoice_total_amount_inc_vat),
-    amount_total:      String(inv.invoice_total_amount_inc_vat),
-    book_amount_open:  String(inv.invoice_open_amount_inc_vat),
-    amount_open:       String(inv.invoice_open_amount_inc_vat),
+    book_amount_total: String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
+    amount_total:      String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
+    book_amount_open:  String(Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0)),
+    amount_open:       String(Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0)),
+    ...(Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0) === 0 && inv.amount_paid > 0 && {
+      payments: [{
+        amount:            String(parseFloat(inv.amount_paid)),
+        origin_identifier: `${inv.invoice_number}-writeoff`,
+        transaction_type:  'write_off',
+      }],
+    }),
     currency_code:     inv.currency_code || 'EUR',
   };
 }
@@ -1885,6 +1892,7 @@ function buildFrontendPayload(inv) {
     invoice_due_date:            inv.data.invoice_due_date,
     invoice_total_amount_inc_vat: inv.data.invoice_total_amount_inc_vat,
     invoice_open_amount_inc_vat:  inv.data.invoice_open_amount_inc_vat,
+    amount_paid:                 inv.amountPaid ?? null,
     currency_code:               'EUR',
     debtor_number:               'DEB-001',
     debtor_name:                 'Client Test',
@@ -1932,6 +1940,38 @@ suite('Pipeline complet — paiement partiel → book_amount_open réduit', () =
   body = buildApiPaytBody(payload);
   test('sans amountPaid — book_amount_open inchangé = "800"', body.book_amount_open, '800');
   test('sans amountPaid — amount_open inchangé = "800"',       body.amount_open,      '800');
+});
+
+suite('Pipeline complet — payments write_off quand amount_open = 0', () => {
+  let inv, payload, body;
+
+  // Paiement total → doit inclure payments[]
+  inv = mkFullInv(500, 500); applyAmountPaid(inv, 500);
+  payload = buildFrontendPayload(inv);
+  body = buildApiPaytBody(payload);
+  test('paiement total — payments présent',                       Array.isArray(body.payments), true);
+  test('paiement total — 1 paiement dans payments',               body.payments && body.payments.length, 1);
+  test('paiement total — amount = "500"',                         body.payments && body.payments[0].amount, '500');
+  test('paiement total — transaction_type = write_off',           body.payments && body.payments[0].transaction_type, 'write_off');
+  test('paiement total — origin_identifier = F-001-writeoff',     body.payments && body.payments[0].origin_identifier, 'F-001-writeoff');
+
+  // Paiement partiel → NE doit PAS inclure payments[]
+  inv = mkFullInv(500, 500); applyAmountPaid(inv, 200);
+  payload = buildFrontendPayload(inv);
+  body = buildApiPaytBody(payload);
+  test('paiement partiel — payments absent',                      body.payments, undefined);
+
+  // Sans amountPaid → payments absent
+  inv = mkFullInv(500, 500);
+  payload = buildFrontendPayload(inv);
+  body = buildApiPaytBody(payload);
+  test('sans amountPaid — payments absent',                       body.payments, undefined);
+
+  // Suspens déjà 0 sans amountPaid → payments absent (pas de write-off sans montant)
+  inv = mkFullInv(500, 0);
+  payload = buildFrontendPayload(inv);
+  body = buildApiPaytBody(payload);
+  test('suspens=0 sans amountPaid — payments absent',             body.payments, undefined);
 });
 
 

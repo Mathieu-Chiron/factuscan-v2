@@ -2,7 +2,7 @@
 // Pushes invoices (+ contacts + debtors) to PAYT in three batch steps:
 //   1. POST /v1/contacts — upsert contacts with address (deduplicated by contact_identifier)
 //   2. POST /v1/debtors  — link contacts to administration as debtors
-//   3. POST /v1/invoices — create invoices linked by debtor_number
+//   3. POST /v1/invoices — create invoices; fully-paid ones include a payments[{transaction_type:"credit"}]
 //
 // Expected body:
 // {
@@ -148,19 +148,30 @@ export default async function handler(req, res) {
   });
 
   for (const [administrationId, batch] of Object.entries(invoicesByAdmin)) {
+    batch.forEach(inv => {
+      const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
+      const amountPaid    = parseFloat(inv.amount_paid) || 0;
+      console.log(`[payt-push ${ts()}] invoice ${inv.invoice_number} — open=${effectiveOpen} amount_paid=${amountPaid} → payment=${effectiveOpen === 0 && amountPaid > 0 ? 'YES' : 'NO'}`);
+    });
+
+    const today = new Date().toISOString().slice(0, 10);
+
     const payload = {
       administration_id: administrationId,
-      invoices: batch.map(inv => ({
-        debtor_number:     inv.debtor_number,
-        invoice_number:    inv.invoice_number,
-        invoice_date:      inv.invoice_date,
-        due_date:          inv.invoice_due_date,
-        book_amount_total: String(inv.invoice_total_amount_inc_vat),
-        amount_total:      String(inv.invoice_total_amount_inc_vat),
-        book_amount_open:  String(inv.invoice_open_amount_inc_vat),
-        amount_open:       String(inv.invoice_open_amount_inc_vat),
-        currency_code:     inv.currency_code || 'EUR',
-      })),
+      invoices: batch.map(inv => {
+        const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
+        return {
+          debtor_number:     inv.debtor_number,
+          invoice_number:    inv.invoice_number,
+          invoice_date:      inv.invoice_date,
+          due_date:          inv.invoice_due_date,
+          book_amount_total: String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
+          amount_total:      String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
+          book_amount_open:  String(effectiveOpen),
+          amount_open:       String(effectiveOpen),
+          currency_code:     inv.currency_code || 'EUR',
+        };
+      }),
     };
 
     try {
@@ -177,14 +188,68 @@ export default async function handler(req, res) {
         });
       } else {
         batch.forEach(inv => {
-          const invErrors   = data?.errors?.[inv.invoice_number]   || [];
-          const invWarnings = data?.warnings?.[inv.invoice_number] || [];
-          results[inv.invoice_number].errors.push(...invErrors);
-          results[inv.invoice_number].warnings.push(...invWarnings);
-          if (!results[inv.invoice_number].errors.length) {
-            results[inv.invoice_number].success = true;
-          }
+          results[inv.invoice_number].errors.push(...(data?.errors?.[inv.invoice_number]   || []));
+          results[inv.invoice_number].warnings.push(...(data?.warnings?.[inv.invoice_number] || []));
+          if (!results[inv.invoice_number].errors.length) results[inv.invoice_number].success = true;
         });
+
+        // ── Step 4: POST /v1/payments for fully paid invoices ──
+        batch.forEach(inv => {
+          const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
+          const amountPaid    = parseFloat(inv.amount_paid) || 0;
+          console.log(`[payt-push ${ts()}] payment check ${inv.invoice_number}: open=${effectiveOpen} paid=${amountPaid} errors=${results[inv.invoice_number].errors.length}`);
+        });
+        const paidBatch = batch.filter(inv => {
+          const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
+          return effectiveOpen === 0 && (parseFloat(inv.amount_paid) || 0) > 0
+            && !results[inv.invoice_number].errors.length;
+        });
+        console.log(`[payt-push ${ts()}] paidBatch size: ${paidBatch.length}`);
+
+        for (const inv of paidBatch) {
+          try {
+            // GET invoice to retrieve PAYT internal id
+            const getUrl = `${PAYT_BASE}/v1/invoices?administration_id=${encodeURIComponent(administrationId)}`;
+            const gr = await fetchWithRetry(getUrl, { method: 'GET', headers });
+            const gdata = await gr.json().catch(() => ({}));
+            console.log(`[payt-push ${ts()}] GET invoice ${inv.invoice_number}:`, gr.status, JSON.stringify(gdata));
+
+            // Probe common response shapes for the internal id
+            const list = gdata?.data ?? gdata?.invoices ?? (Array.isArray(gdata) ? gdata : []);
+            const found = list.find?.(i => i.invoice_number === inv.invoice_number);
+            const paytId = found?.id ?? found?.invoice_id;
+            console.log(`[payt-push ${ts()}] invoice_id for ${inv.invoice_number}: ${paytId ?? 'NOT FOUND'}`);
+
+            if (!paytId) {
+              results[inv.invoice_number].warnings.push('Paiement non enregistré : ID PAYT introuvable');
+              continue;
+            }
+
+            const pmPayload = {
+              administration_id: administrationId,
+              payments: [{
+                invoice_id:        paytId,
+                amount:            String(parseFloat(inv.amount_paid)),
+                book_amount:       String(parseFloat(inv.amount_paid)),
+                origin_identifier: `PAY-${inv.invoice_number}`,
+                cost_type:         'principal',
+                transaction_type:  'credit',
+                payment_date:      today,
+              }],
+            };
+            console.log(`[payt-push ${ts()}] PAYMENT payload:`, JSON.stringify(pmPayload));
+            const pr = await fetchWithRetry(`${PAYT_BASE}/v1/payments`, { method: 'PUT', headers, body: JSON.stringify(pmPayload) });
+            const pdata = await pr.json().catch(() => ({}));
+            console.log(`[payt-push ${ts()}] PAYMENT response`, pr.status, JSON.stringify(pdata));
+            if (!pr.ok) {
+              results[inv.invoice_number].warnings.push(
+                `Paiement non enregistré [${pr.status}]: ${pdata?.error?.message || pdata?.message || 'Erreur inconnue'}`
+              );
+            }
+          } catch (e) {
+            results[inv.invoice_number].warnings.push('Impossible d\'enregistrer le paiement sur PAYT');
+          }
+        }
       }
     } catch (e) {
       batch.forEach(inv => { results[inv.invoice_number].errors.push('Impossible de joindre PAYT (factures)'); });
