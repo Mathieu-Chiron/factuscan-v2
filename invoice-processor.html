@@ -1169,7 +1169,24 @@ JSON uniquement.`;
     inv.data=norm;inv.rawNorm=rawNorm;inv.repaired=parsed.repaired||false;
     inv.debtorType=norm.debtor_vat_number?'entreprise':'particulier';
     inv.confidence=confidence(norm,S.fields);inv.status='extracted';inv.errors={};
+    // ── Détection doublon contenu : même n° de facture + même montant ──
+    const contentDup=findContentDuplicate(S.invoices,inv);
+    if(contentDup){
+      inv.status='error';
+      inv.error=`Doublon : la facture n°${norm.invoice_number} (${norm.invoice_total_amount_inc_vat}€) est déjà présente (fichier : ${contentDup.fileName})`;
+    }
   } catch(e){inv.status='error';inv.error=e.message;inv.data={};inv.confidence=0;}
+}
+
+function findContentDuplicate(invoices, currentInv) {
+  const num=currentInv.data?.invoice_number;
+  const amt=parseFloat(currentInv.data?.invoice_total_amount_inc_vat);
+  if(!num||isNaN(amt)) return null;
+  return invoices.find(other=>
+    other!==currentInv &&
+    other.data?.invoice_number===num &&
+    Math.abs(parseFloat(other.data?.invoice_total_amount_inc_vat)-amt)<0.001
+  )||null;
 }
 
 /* ══ VALIDATE / SKIP / RE-EXTRACT ════════════════════ */

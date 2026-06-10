@@ -2105,6 +2105,98 @@ suite('filterNewFiles — détection des doublons à l\'ajout', () => {
   test('3 nouveaux fichiers → 0 doublon',             r.duplicates.length, 0);
 });
 
+/* ══ CONTENT DUPLICATE DETECTION ══════════════════════
+   findContentDuplicate(invoices, currentInv)
+   Checks after extraction whether another invoice in the list
+   already has the same invoice_number AND the same total amount.
+   Returns the matching invoice object, or null if none.
+══════════════════════════════════════════════════════ */
+function findContentDuplicate(invoices, currentInv) {
+  const num = currentInv.data?.invoice_number;
+  const amt = parseFloat(currentInv.data?.invoice_total_amount_inc_vat);
+  if (!num || isNaN(amt)) return null;
+  return invoices.find(other =>
+    other !== currentInv &&
+    other.data?.invoice_number === num &&
+    Math.abs(parseFloat(other.data?.invoice_total_amount_inc_vat) - amt) < 0.001
+  ) || null;
+}
+
+suite('findContentDuplicate — doublon par numéro + montant', () => {
+  let inv, others, dup;
+
+  const mkInv = (fileName, invoice_number, amount) => ({
+    fileName,
+    data: { invoice_number, invoice_total_amount_inc_vat: amount },
+  });
+
+  // ── Pas de doublon ──
+  inv = mkInv('b.pdf', '2026-00001', 150);
+  test('liste vide → null',
+    findContentDuplicate([], inv), null);
+
+  inv = mkInv('b.pdf', '2026-00001', 150);
+  others = [mkInv('a.pdf', '2026-00002', 150)];
+  test('même montant, n° différent → null',
+    findContentDuplicate([...others, inv], inv), null);
+
+  inv = mkInv('b.pdf', '2026-00001', 150);
+  others = [mkInv('a.pdf', '2026-00001', 200)];
+  test('même n°, montant différent → null',
+    findContentDuplicate([...others, inv], inv), null);
+
+  // ── Doublon détecté ──
+  inv = mkInv('b.pdf', '2026-00001', 150);
+  const existing = mkInv('a.pdf', '2026-00001', 150);
+  dup = findContentDuplicate([existing, inv], inv);
+  test('même n° + même montant → doublon trouvé',
+    dup !== null, true);
+  test('doublon trouvé → c\'est le bon fichier',
+    dup?.fileName, 'a.pdf');
+
+  // ── Ne se compare pas à lui-même ──
+  inv = mkInv('a.pdf', '2026-00001', 150);
+  test('seul dans la liste → null (pas de comparaison avec soi-même)',
+    findContentDuplicate([inv], inv), null);
+
+  // ── Tolérance flottante (±0.001) ──
+  inv = mkInv('b.pdf', '2026-00001', 150.0);
+  others = [mkInv('a.pdf', '2026-00001', 150.0005)];
+  test('montant à 0.0005 près → doublon (dans tolérance)',
+    findContentDuplicate([...others, inv], inv) !== null, true);
+
+  inv = mkInv('b.pdf', '2026-00001', 150.0);
+  others = [mkInv('a.pdf', '2026-00001', 150.01)];
+  test('montant à 0.01 d\'écart → null (hors tolérance)',
+    findContentDuplicate([...others, inv], inv), null);
+
+  // ── Données manquantes → pas de faux positifs ──
+  inv = { fileName: 'b.pdf', data: {} };
+  others = [mkInv('a.pdf', null, null)];
+  test('invoice_number null → null',
+    findContentDuplicate([...others, inv], inv), null);
+
+  inv = mkInv('b.pdf', null, 150);
+  others = [mkInv('a.pdf', null, 150)];
+  test('deux factures sans n° → null (pas de match sur null)',
+    findContentDuplicate([...others, inv], inv), null);
+
+  inv = { fileName: 'b.pdf', data: null };
+  test('data null → null (pas de crash)',
+    findContentDuplicate([mkInv('a.pdf','2026-00001',100), inv], inv), null);
+
+  // ── Plusieurs factures, une seule correspondante ──
+  inv = mkInv('c.pdf', '2026-00001', 150);
+  others = [
+    mkInv('a.pdf', '2026-00002', 150),
+    mkInv('b.pdf', '2026-00001', 150),
+    mkInv('d.pdf', '2026-00003', 99),
+  ];
+  dup = findContentDuplicate([...others, inv], inv);
+  test('liste multiple → trouve la seule correspondante',
+    dup?.fileName, 'b.pdf');
+});
+
 console.log(`\n${'─'.repeat(50)}`);
 console.log(`✓ ${pass} passed   ${fail>0?'✗ '+fail+' failed':''}`);
 console.log('─'.repeat(50));

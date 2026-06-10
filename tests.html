@@ -1467,6 +1467,49 @@ html.push('<h2>Admin — Authentification</h2>');
       input:null, expected:0, fn:()=>filterNewFiles([],[{name:'a.pdf'},{name:'b.pdf'},{name:'c.pdf'}]).duplicates.length},
   ]));
 
+  /* ── Content duplicate detection ── */
+  function findContentDuplicate(invoices, currentInv) {
+    const num=currentInv.data?.invoice_number;
+    const amt=parseFloat(currentInv.data?.invoice_total_amount_inc_vat);
+    if(!num||isNaN(amt)) return null;
+    return invoices.find(other=>
+      other!==currentInv &&
+      other.data?.invoice_number===num &&
+      Math.abs(parseFloat(other.data?.invoice_total_amount_inc_vat)-amt)<0.001
+    )||null;
+  }
+  const mkInvC=(fileName,invoice_number,amount)=>({fileName,data:{invoice_number,invoice_total_amount_inc_vat:amount}});
+  html.push(runSuite('findContentDuplicate — doublon par numéro + montant', [
+    {desc:'liste vide → null',
+      input:null, expected:null, fn:()=>{const inv=mkInvC('b.pdf','2026-00001',150);return findContentDuplicate([],inv);}},
+    {desc:'même montant, n° différent → null',
+      input:null, expected:null, fn:()=>{const inv=mkInvC('b.pdf','2026-00001',150);return findContentDuplicate([mkInvC('a.pdf','2026-00002',150),inv],inv);}},
+    {desc:'même n°, montant différent → null',
+      input:null, expected:null, fn:()=>{const inv=mkInvC('b.pdf','2026-00001',150);return findContentDuplicate([mkInvC('a.pdf','2026-00001',200),inv],inv);}},
+    {desc:'même n° + même montant → doublon trouvé',
+      input:null, expected:true, fn:()=>{const inv=mkInvC('b.pdf','2026-00001',150);return findContentDuplicate([mkInvC('a.pdf','2026-00001',150),inv],inv)!==null;}},
+    {desc:'doublon trouvé → c\'est le bon fichier',
+      input:null, expected:'a.pdf', fn:()=>{const inv=mkInvC('b.pdf','2026-00001',150);return findContentDuplicate([mkInvC('a.pdf','2026-00001',150),inv],inv)?.fileName;}},
+    {desc:'seul dans la liste → null (pas de comparaison avec soi-même)',
+      input:null, expected:null, fn:()=>{const inv=mkInvC('a.pdf','2026-00001',150);return findContentDuplicate([inv],inv);}},
+    {desc:'montant à 0.0005 près → doublon (dans tolérance)',
+      input:null, expected:true, fn:()=>{const inv=mkInvC('b.pdf','2026-00001',150.0);return findContentDuplicate([mkInvC('a.pdf','2026-00001',150.0005),inv],inv)!==null;}},
+    {desc:'montant à 0.01 d\'écart → null (hors tolérance)',
+      input:null, expected:null, fn:()=>{const inv=mkInvC('b.pdf','2026-00001',150.0);return findContentDuplicate([mkInvC('a.pdf','2026-00001',150.01),inv],inv);}},
+    {desc:'invoice_number null → null',
+      input:null, expected:null, fn:()=>{const inv={fileName:'b.pdf',data:{}};return findContentDuplicate([mkInvC('a.pdf',null,null),inv],inv);}},
+    {desc:'deux factures sans n° → null (pas de match sur null)',
+      input:null, expected:null, fn:()=>{const inv=mkInvC('b.pdf',null,150);return findContentDuplicate([mkInvC('a.pdf',null,150),inv],inv);}},
+    {desc:'data null → null (pas de crash)',
+      input:null, expected:null, fn:()=>{const inv={fileName:'b.pdf',data:null};return findContentDuplicate([mkInvC('a.pdf','2026-00001',100),inv],inv);}},
+    {desc:'liste multiple → trouve la seule correspondante',
+      input:null, expected:'b.pdf', fn:()=>{
+        const inv=mkInvC('c.pdf','2026-00001',150);
+        const others=[mkInvC('a.pdf','2026-00002',150),mkInvC('b.pdf','2026-00001',150),mkInvC('d.pdf','2026-00003',99)];
+        return findContentDuplicate([...others,inv],inv)?.fileName;
+      }},
+  ]));
+
   document.getElementById('root').innerHTML = `<div class="summary">
     <div><div class="sum-n" style="color:#085041;">${totalPass}</div><div class="sum-l">Tests passés</div></div>
     <div><div class="sum-n" style="color:${totalFail>0?'#c0392b':'#085041'};">${totalFail}</div><div class="sum-l">Tests échoués</div></div>
