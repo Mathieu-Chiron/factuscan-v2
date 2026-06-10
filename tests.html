@@ -1414,6 +1414,59 @@ html.push('<h2>Admin — Authentification</h2>');
     {desc:'Non-admin → bouton caché (display="none")', input:false, expected:'none', fn:getSettingsButtonDisplay},
   ]));
 
+  /* ── Duplicate detection ── */
+  function filterNewFiles(existingInvoices, files) {
+    const invoices = existingInvoices.map(x => ({ fileName: x.fileName }));
+    const duplicates = [];
+    const toAdd = [];
+    files.forEach(f => {
+      if (invoices.some(x => x.fileName === f.name)) {
+        duplicates.push(f.name);
+      } else {
+        invoices.push({ fileName: f.name });
+        toAdd.push(f.name);
+      }
+    });
+    return { toAdd, duplicates };
+  }
+
+  html.push(runSuite('filterNewFiles — détection des doublons à l\'ajout', [
+    {desc:'liste vide + 1 nouveau → 1 ajouté',
+      input:null, expected:1, fn:()=>filterNewFiles([],[{name:'facture-A.pdf'}]).toAdd.length},
+    {desc:'liste vide + 1 nouveau → 0 doublon',
+      input:null, expected:0, fn:()=>filterNewFiles([],[{name:'facture-A.pdf'}]).duplicates.length},
+    {desc:'fichier déjà présent → 0 ajouté',
+      input:null, expected:0, fn:()=>filterNewFiles([{fileName:'facture-A.pdf'}],[{name:'facture-A.pdf'}]).toAdd.length},
+    {desc:'fichier déjà présent → doublon détecté',
+      input:null, expected:1, fn:()=>filterNewFiles([{fileName:'facture-A.pdf'}],[{name:'facture-A.pdf'}]).duplicates.length},
+    {desc:'fichier déjà présent → nom correct',
+      input:null, expected:'facture-A.pdf', fn:()=>filterNewFiles([{fileName:'facture-A.pdf'}],[{name:'facture-A.pdf'}]).duplicates[0]},
+    {desc:'même fichier x2 dans batch → 1 ajouté',
+      input:null, expected:1, fn:()=>filterNewFiles([],[{name:'facture-A.pdf'},{name:'facture-A.pdf'}]).toAdd.length},
+    {desc:'même fichier x2 dans batch → 1 doublon',
+      input:null, expected:1, fn:()=>filterNewFiles([],[{name:'facture-A.pdf'},{name:'facture-A.pdf'}]).duplicates.length},
+    {desc:'mix — 2 nouveaux ajoutés',
+      input:null, expected:2, fn:()=>filterNewFiles([{fileName:'old.pdf'}],[{name:'new.pdf'},{name:'old.pdf'},{name:'other.pdf'}]).toAdd.length},
+    {desc:'mix — 1 doublon détecté',
+      input:null, expected:1, fn:()=>filterNewFiles([{fileName:'old.pdf'}],[{name:'new.pdf'},{name:'old.pdf'},{name:'other.pdf'}]).duplicates.length},
+    {desc:'tous doublons → rien ajouté',
+      input:null, expected:0, fn:()=>filterNewFiles([{fileName:'a.pdf'},{fileName:'b.pdf'}],[{name:'a.pdf'},{name:'b.pdf'}]).toAdd.length},
+    {desc:'tous doublons → 2 détectés',
+      input:null, expected:2, fn:()=>filterNewFiles([{fileName:'a.pdf'},{fileName:'b.pdf'}],[{name:'a.pdf'},{name:'b.pdf'}]).duplicates.length},
+    {desc:'aucun fichier → toAdd vide',
+      input:null, expected:0, fn:()=>filterNewFiles([{fileName:'a.pdf'}],[]).toAdd.length},
+    {desc:'aucun fichier → duplicates vide',
+      input:null, expected:0, fn:()=>filterNewFiles([{fileName:'a.pdf'}],[]).duplicates.length},
+    {desc:'casse différente → non doublon (case-sensitive)',
+      input:null, expected:1, fn:()=>filterNewFiles([{fileName:'Facture.pdf'}],[{name:'facture.pdf'}]).toAdd.length},
+    {desc:'casse différente → 0 doublon',
+      input:null, expected:0, fn:()=>filterNewFiles([{fileName:'Facture.pdf'}],[{name:'facture.pdf'}]).duplicates.length},
+    {desc:'3 nouveaux fichiers → tous ajoutés',
+      input:null, expected:3, fn:()=>filterNewFiles([],[{name:'a.pdf'},{name:'b.pdf'},{name:'c.pdf'}]).toAdd.length},
+    {desc:'3 nouveaux fichiers → 0 doublon',
+      input:null, expected:0, fn:()=>filterNewFiles([],[{name:'a.pdf'},{name:'b.pdf'},{name:'c.pdf'}]).duplicates.length},
+  ]));
+
   document.getElementById('root').innerHTML = `<div class="summary">
     <div><div class="sum-n" style="color:#085041;">${totalPass}</div><div class="sum-l">Tests passés</div></div>
     <div><div class="sum-n" style="color:${totalFail>0?'#c0392b':'#085041'};">${totalFail}</div><div class="sum-l">Tests échoués</div></div>

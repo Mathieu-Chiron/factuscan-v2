@@ -2030,6 +2030,81 @@ suite('autoFillTargetCompany — remplissage des factures existantes', () => {
   test('0 admins → aucune facture remplie',
     invs[0].targetCompany, null);
 });
+/* ══ DUPLICATE DETECTION ══════════════════════════════
+   Mirrors the duplicate-check loop from addFiles() in invoice-processor.html:
+     accepted.forEach(f => {
+       if (S.invoices.some(x => x.fileName === f.name)) { duplicates.push(f.name); }
+       else { S.invoices.push(inv); toUpload.push({f, inv}); }
+     });
+   The function mutates `invoices` inline so that two identical files
+   in the same batch are both caught (second one sees the first already added).
+══════════════════════════════════════════════════════ */
+function filterNewFiles(existingInvoices, files) {
+  const invoices = existingInvoices.map(x => ({ fileName: x.fileName }));
+  const duplicates = [];
+  const toAdd = [];
+  files.forEach(f => {
+    if (invoices.some(x => x.fileName === f.name)) {
+      duplicates.push(f.name);
+    } else {
+      invoices.push({ fileName: f.name });
+      toAdd.push(f.name);
+    }
+  });
+  return { toAdd, duplicates };
+}
+
+suite('filterNewFiles — détection des doublons à l\'ajout', () => {
+  let r;
+
+  // ── Cas de base ──
+  r = filterNewFiles([], [{ name: 'facture-A.pdf' }]);
+  test('liste vide + 1 nouveau → 1 ajouté',          r.toAdd.length,      1);
+  test('liste vide + 1 nouveau → 0 doublon',          r.duplicates.length, 0);
+
+  r = filterNewFiles([{ fileName: 'facture-A.pdf' }], [{ name: 'facture-A.pdf' }]);
+  test('fichier déjà présent → 0 ajouté',             r.toAdd.length,      0);
+  test('fichier déjà présent → doublon détecté',      r.duplicates.length, 1);
+  test('fichier déjà présent → nom correct',          r.duplicates[0],     'facture-A.pdf');
+
+  // ── Même fichier deux fois dans le même batch ──
+  r = filterNewFiles([], [{ name: 'facture-A.pdf' }, { name: 'facture-A.pdf' }]);
+  test('même fichier x2 dans batch → 1 ajouté',       r.toAdd.length,      1);
+  test('même fichier x2 dans batch → 1 doublon',      r.duplicates.length, 1);
+
+  // ── Mix nouveaux + doublons ──
+  r = filterNewFiles(
+    [{ fileName: 'old.pdf' }],
+    [{ name: 'new.pdf' }, { name: 'old.pdf' }, { name: 'other.pdf' }]
+  );
+  test('mix — 2 nouveaux ajoutés',                    r.toAdd.length,      2);
+  test('mix — 1 doublon détecté',                     r.duplicates.length, 1);
+  test('mix — doublon = old.pdf',                     r.duplicates[0],     'old.pdf');
+
+  // ── Tous doublons ──
+  r = filterNewFiles(
+    [{ fileName: 'a.pdf' }, { fileName: 'b.pdf' }],
+    [{ name: 'a.pdf' }, { name: 'b.pdf' }]
+  );
+  test('tous doublons → rien ajouté',                 r.toAdd.length,      0);
+  test('tous doublons → 2 détectés',                  r.duplicates.length, 2);
+
+  // ── Aucun fichier ──
+  r = filterNewFiles([{ fileName: 'a.pdf' }], []);
+  test('aucun fichier → toAdd vide',                  r.toAdd.length,      0);
+  test('aucun fichier → duplicates vide',             r.duplicates.length, 0);
+
+  // ── Sensibilité à la casse ──
+  r = filterNewFiles([{ fileName: 'Facture.pdf' }], [{ name: 'facture.pdf' }]);
+  test('casse différente → non doublon (case-sensitive)', r.toAdd.length,  1);
+  test('casse différente → 0 doublon',                    r.duplicates.length, 0);
+
+  // ── Plusieurs nouveaux sans doublon ──
+  r = filterNewFiles([], [{ name: 'a.pdf' }, { name: 'b.pdf' }, { name: 'c.pdf' }]);
+  test('3 nouveaux fichiers → tous ajoutés',          r.toAdd.length,      3);
+  test('3 nouveaux fichiers → 0 doublon',             r.duplicates.length, 0);
+});
+
 console.log(`\n${'─'.repeat(50)}`);
 console.log(`✓ ${pass} passed   ${fail>0?'✗ '+fail+' failed':''}`);
 console.log('─'.repeat(50));
