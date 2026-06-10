@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/payt-push.js": { "maxDuration": 60 },
+    "api/payt-pdf.js":  { "maxDuration": 60 },
+    "api/extract.js":   { "maxDuration": 60 }
+  },
   "rewrites": [
     { "source": "/", "destination": "/invoice-processor.html" },
     { "source": "/admin", "destination": "/admin.html" },
