@@ -170,6 +170,7 @@ export default async function handler(req, res) {
           book_amount_open:  String(effectiveOpen),
           amount_open:       String(effectiveOpen),
           currency_code:     inv.currency_code || 'EUR',
+          ...(inv.payt_status === 'Clôturée' && { labels: ['credit_note'] }),
         };
       }),
     };
