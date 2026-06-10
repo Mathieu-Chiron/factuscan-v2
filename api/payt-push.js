@@ -267,7 +267,10 @@ export default async function handler(req, res) {
           console.log(`[payt-push ${ts()}] création avoir ${creditNumber} pour montant=${effectiveOpen}`);
 
           try {
-            // ── 5a: POST credit note invoice ──
+            // ── 5a: POST credit note invoice with inline payment + reversal_code ──
+            // The payment inside the credit note POST:
+            //   • auto-settles the credit note itself (amount_open → 0)
+            //   • reversal_code links it explicitly to the original invoice
             const cnPayload = {
               administration_id: administrationId,
               invoices: [{
@@ -280,6 +283,15 @@ export default async function handler(req, res) {
                 book_amount_open:  '0',
                 amount_open:       '0',
                 currency_code:     inv.currency_code || 'EUR',
+                payments: [{
+                  amount:            String(effectiveOpen),
+                  book_amount:       String(effectiveOpen),
+                  origin_identifier: creditNumber,
+                  cost_type:         'principal',
+                  transaction_type:  'credit',
+                  payment_date:      today,
+                  reversal_code:     inv.invoice_number,
+                }],
               }],
             };
             console.log(`[payt-push ${ts()}] CREDIT NOTE payload:`, JSON.stringify(cnPayload));
@@ -300,6 +312,7 @@ export default async function handler(req, res) {
             }
 
             // ── 5b: GET original invoice PAYT id → PUT /v1/payments to zero it out ──
+            // reversal_code references the credit note so PAYT can link them
             const getUrl2 = `${PAYT_BASE}/v1/invoices?administration_id=${encodeURIComponent(administrationId)}`;
             const gr2 = await fetchWithRetry(getUrl2, { method: 'GET', headers });
             const gdata2 = await gr2.json().catch(() => ({}));
@@ -325,6 +338,7 @@ export default async function handler(req, res) {
                 cost_type:         'principal',
                 transaction_type:  'credit',
                 payment_date:      today,
+                reversal_code:     creditNumber,
               }],
             };
             console.log(`[payt-push ${ts()}] AVOIR PAYMENT payload:`, JSON.stringify(cn_pmPayload));
