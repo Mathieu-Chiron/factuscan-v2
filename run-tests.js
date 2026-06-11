@@ -2160,3 +2160,30 @@ suite('computeAvoirAmount — cas limites', () => {
   test('montant décimal : 1000 - 333.33 = 666.67', computeAvoirAmount(1000, 333.33),           666.67);
   test('null treated as 0 → avoir = openAmount',   computeAvoirAmount(500, null),              500);
 });
+
+suite('Auto-toggle statut Payée quand amountPaid = montant en suspens', () => {
+  // Simule applyAmountPaid (logique extraite)
+  function simulateApply(baseOpen, paid) {
+    const p = parseFloat(paid);
+    if(isNaN(p) || p <= 0) return { amountPaid: null, newOpen: baseOpen, paytStatus: null };
+    const newOpen = Math.max(0, Math.round((baseOpen - p) * 100) / 100);
+    return { amountPaid: p, newOpen, paytStatus: newOpen === 0 ? 'Payée' : null };
+  }
+
+  let r;
+  r = simulateApply(1000, 1000);
+  test('amountPaid = openAmount → statut Payée',      r.paytStatus, 'Payée');
+  test('amountPaid = openAmount → newOpen = 0',       r.newOpen,    0);
+
+  r = simulateApply(1000, 400);
+  test('amountPaid < openAmount → pas de toggle',     r.paytStatus, null);
+  test('amountPaid < openAmount → newOpen = 600',     r.newOpen,    600);
+
+  r = simulateApply(1000, 1200);
+  test('amountPaid > openAmount → statut Payée',      r.paytStatus, 'Payée');
+  test('amountPaid > openAmount → newOpen = 0',       r.newOpen,    0);
+
+  r = simulateApply(1000, null);
+  test('amountPaid effacé → statut null',             r.paytStatus, null);
+  test('amountPaid effacé → newOpen = baseOpen',      r.newOpen,    1000);
+});
