@@ -2302,3 +2302,61 @@ suite('Auto-toggle statut Payée quand amountPaid = montant en suspens', () => {
   test('amountPaid effacé → statut null',             r.paytStatus, null);
   test('amountPaid effacé → newOpen = baseOpen',      r.newOpen,    1000);
 });
+
+// ── Simule la logique du GET partagé avec cache d'IDs ──
+// Reproduit la construction de paytIdCache dans payt-push.js
+function buildPaytIdCache(invoiceNumbers, paytInvoiceList) {
+  const cache = new Map();
+  const needed = new Set(invoiceNumbers);
+  paytInvoiceList.forEach(i => {
+    if (needed.has(i.invoice_number)) {
+      const id = i.id ?? i.invoice_id;
+      if (id) cache.set(i.invoice_number, id);
+    }
+  });
+  return cache;
+}
+
+suite('GET partagé — cache IDs PAYT (Step 4 et Step 5b)', () => {
+  const needed = ['F-001', 'F-002'];
+
+  // Cas normal : PAYT retourne les deux invoices dès le premier GET
+  const paytList = [
+    { invoice_number: 'F-001', id: 'payt-111' },
+    { invoice_number: 'F-002', id: 'payt-222' },
+    { invoice_number: 'F-003', id: 'payt-333' }, // non demandée
+  ];
+  const cache = buildPaytIdCache(needed, paytList);
+  test('F-001 trouvée dans le cache',         cache.get('F-001'), 'payt-111');
+  test('F-002 trouvée dans le cache',         cache.get('F-002'), 'payt-222');
+  test('F-003 non demandée → absente',        cache.has('F-003'), false);
+  test('cache complet (2/2)',                 cache.size, 2);
+  test('missing = 0 → pas de retry nécessaire',
+    needed.filter(n => !cache.has(n)).length, 0);
+
+  // Cas latence : premier GET ne retourne qu'une invoice sur deux
+  const partialList = [{ invoice_number: 'F-001', id: 'payt-111' }];
+  const partialCache = buildPaytIdCache(needed, partialList);
+  const missing = needed.filter(n => !partialCache.has(n));
+  test('1er GET partiel : F-001 trouvée',     partialCache.get('F-001'), 'payt-111');
+  test('1er GET partiel : F-002 manquante',   partialCache.has('F-002'), false);
+  test('missing.length = 1 → retry déclenché', missing.length, 1);
+  test('missing contient F-002',              missing[0], 'F-002');
+
+  // Cas id via invoice_id (forme alternative PAYT)
+  const altList = [{ invoice_number: 'F-001', invoice_id: 'payt-alt-111' }];
+  const altCache = buildPaytIdCache(['F-001'], altList);
+  test('id via invoice_id reconnu',           altCache.get('F-001'), 'payt-alt-111');
+
+  // Cas GET vide (PAYT pas encore indexé) → cache vide → retry
+  const emptyCache = buildPaytIdCache(needed, []);
+  test('GET vide → cache vide',               emptyCache.size, 0);
+  test('GET vide → tous manquants → retry',   needed.filter(n => !emptyCache.has(n)).length, 2);
+
+  // Step 4 utilise le cache : vérifie que le bon ID est utilisé pour le paiement
+  const fullCache = buildPaytIdCache(needed, paytList);
+  test('Step 4 : paytId pour F-001 = payt-111', fullCache.get('F-001'), 'payt-111');
+
+  // Step 5b réutilise le même cache : même ID, pas de second GET
+  test('Step 5b : même paytId que Step 4',    fullCache.get('F-001'), 'payt-111');
+});
