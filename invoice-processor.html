@@ -1384,6 +1384,13 @@ function renderExpTable(){
       }
       if(col.key==='_amount_paid'){
         const v=row._inv.amountPaid??'';
+        const locked=inv.pushStatus==='success'&&inv.paytStatus==='Clôturée';
+        if(locked){
+          return `<td style="min-width:110px;"><div style="display:flex;align-items:center;gap:4px;">`+
+            `<span style="width:80px;padding:4px 6px;font-size:12px;font-family:var(--font);text-align:right;color:var(--muted);display:inline-block;">${esc(String(v||'—'))}</span>`+
+            `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`+
+            `</div></td>`;
+        }
         return `<td style="min-width:110px;"><div style="display:flex;align-items:center;gap:4px;">`+
           `<input type="number" min="0" step="0.01" value="${esc(String(v))}" placeholder="0.00" `+
           `style="width:80px;padding:4px 6px;border:1px solid var(--faint-border-strong);border-radius:var(--radius);font-size:12px;font-family:var(--font);text-align:right;" `+
@@ -1392,6 +1399,10 @@ function renderExpTable(){
       }
       if(col.type==='select'&&col.key==='_payt_status'){
         const openAmt=parseFloat(inv.data.invoice_open_amount_inc_vat);
+        if(inv.pushStatus==='success'&&inv.paytStatus==='Clôturée'){
+          return `<td style="min-width:112px;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--red);background:rgba(217,31,44,0.06);border:1px solid rgba(217,31,44,0.25);border-radius:var(--radius);padding:3px 8px;white-space:nowrap;">`+
+            `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>Clôturée</span></td>`;
+        }
         if(openAmt===0||inv.paytStatus==='Payée'){
           return `<td style="min-width:112px;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#085041;background:rgba(50,192,130,0.12);border:1px solid rgba(50,192,130,0.30);border-radius:var(--radius);padding:3px 8px;white-space:nowrap;">`+
             `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Payée</span></td>`;
