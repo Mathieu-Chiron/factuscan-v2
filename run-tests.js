@@ -2180,6 +2180,72 @@ suite('computeAvoirAmount — cas limites (effectiveOpen déjà réduit par le f
   test('effectiveOpen négatif → avoir = 0 (pas négatif)', computeAvoirAmount(-5),        0);
 });
 
+// ── Logique isInvLocked extraite du frontend ──
+function isInvLocked(inv) {
+  return inv.pushStatus === 'success' && (inv.paytStatus === 'Clôturée' || inv.paytStatus === 'Payée');
+}
+
+suite('isInvLocked — verrouillage après push', () => {
+  // Verrouillées
+  test('push success + Clôturée → verrouillée',       isInvLocked({ pushStatus: 'success', paytStatus: 'Clôturée' }), true);
+  test('push success + Payée    → verrouillée',       isInvLocked({ pushStatus: 'success', paytStatus: 'Payée'    }), true);
+
+  // Pas verrouillées
+  test('push success + aucun statut → non verrouillée', isInvLocked({ pushStatus: 'success', paytStatus: null        }), false);
+  test('push success + statut vide  → non verrouillée', isInvLocked({ pushStatus: 'success', paytStatus: ''          }), false);
+  test('push error  + Clôturée      → non verrouillée', isInvLocked({ pushStatus: 'error',   paytStatus: 'Clôturée'  }), false);
+  test('push error  + Payée         → non verrouillée', isInvLocked({ pushStatus: 'error',   paytStatus: 'Payée'     }), false);
+  test('jamais envoyée + Clôturée   → non verrouillée', isInvLocked({ pushStatus: null,      paytStatus: 'Clôturée'  }), false);
+  test('jamais envoyée + Payée      → non verrouillée', isInvLocked({ pushStatus: null,      paytStatus: 'Payée'     }), false);
+  test('envoi en cours + Clôturée   → non verrouillée', isInvLocked({ pushStatus: 'sending', paytStatus: 'Clôturée'  }), false);
+});
+
+suite('toSend — factures verrouillées exclues du push', () => {
+  // Simule le filtre toSend du frontend
+  function simulateToSend(invoices) {
+    return invoices.filter(inv =>
+      inv.status === 'validated' && inv.targetCompany && !isInvLocked(inv)
+    );
+  }
+  const company = { id: '1', name: 'Société A' };
+  const invs = [
+    { status: 'validated', targetCompany: company, pushStatus: 'success', paytStatus: 'Clôturée' }, // verrouillée
+    { status: 'validated', targetCompany: company, pushStatus: 'success', paytStatus: 'Payée'    }, // verrouillée
+    { status: 'validated', targetCompany: company, pushStatus: 'success', paytStatus: null        }, // push réussi mais pas de statut → ok
+    { status: 'validated', targetCompany: company, pushStatus: null,      paytStatus: null        }, // jamais envoyée → ok
+    { status: 'validated', targetCompany: company, pushStatus: 'error',   paytStatus: 'Clôturée' }, // erreur push → ok
+    { status: 'pending',   targetCompany: company, pushStatus: null,      paytStatus: null        }, // pas validée → exclue
+    { status: 'validated', targetCompany: null,    pushStatus: null,      paytStatus: null        }, // pas d'entreprise → exclue
+  ];
+  const result = simulateToSend(invs);
+  test('3 factures éligibles (non verrouillées, validées, avec entreprise)', result.length, 3);
+  test('Clôturée+success exclue',   result.includes(invs[0]), false);
+  test('Payée+success exclue',      result.includes(invs[1]), false);
+  test('success+sans statut incluse', result.includes(invs[2]), true);
+  test('jamais envoyée incluse',    result.includes(invs[3]), true);
+  test('erreur+Clôturée incluse',   result.includes(invs[4]), true);
+  test('pending exclue',            result.includes(invs[5]), false);
+  test('sans entreprise exclue',    result.includes(invs[6]), false);
+});
+
+suite('bulkSetStatus — factures verrouillées ignorées', () => {
+  // Simule le comportement de bulkSetStatus
+  function simulateBulkSetStatus(invoices, value) {
+    invoices.forEach(inv => { if (!isInvLocked(inv)) inv.paytStatus = value; });
+    return invoices;
+  }
+  const company = { id: '1', name: 'Société A' };
+  const invs = [
+    { pushStatus: 'success', paytStatus: 'Clôturée' }, // verrouillée → inchangée
+    { pushStatus: 'success', paytStatus: null        }, // non verrouillée → mise à jour
+    { pushStatus: null,      paytStatus: null        }, // jamais envoyée → mise à jour
+  ];
+  simulateBulkSetStatus(invs, 'Payée');
+  test('verrouillée reste Clôturée (non modifiée)', invs[0].paytStatus, 'Clôturée');
+  test('non verrouillée → Payée',                   invs[1].paytStatus, 'Payée');
+  test('jamais envoyée → Payée',                    invs[2].paytStatus, 'Payée');
+});
+
 suite('Auto-toggle statut Payée quand amountPaid = montant en suspens', () => {
   // Simule applyAmountPaid (logique extraite)
   function simulateApply(baseOpen, paid) {
