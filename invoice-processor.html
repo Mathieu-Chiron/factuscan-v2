@@ -280,8 +280,11 @@ html,body{overflow:hidden;}
     <div class="topbar-left">
       <span class="topbar-title">Factures</span>
       <div class="prog-wrap" id="progWrap" style="display:none;">
-        <div class="progress-bar"><div class="progress-bar__fill" id="progFill" style="width:0%"></div></div>
-        <span id="progTxt">0 / 0</span>
+        <div id="progBarArea" style="display:none;align-items:center;gap:8px;">
+          <div class="progress-bar"><div class="progress-bar__fill" id="progFill" style="width:0%"></div></div>
+          <span id="progTxt">0 / 0</span>
+        </div>
+        <span id="dbStats" style="display:none;align-items:center;gap:10px;font-size:12px;"></span>
       </div>
     </div>
     <div class="topbar-right">
@@ -376,8 +379,8 @@ html,body{overflow:hidden;}
       <button class="btn btn-sm" id="btnSetCloturee" onclick="bulkSetStatus('Clôturée')" style="background:rgba(217,31,44,0.06);border-color:rgba(217,31,44,0.25);color:var(--red);font-size:12px;">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:middle;"><path d="M18 6L6 18M6 6l12 12"/></svg>Enregistrer comme Clôturées
       </button>
-      <button class="btn btn-sm" id="btnDeleteSel" onclick="deleteSelected()" style="background:rgba(217,31,44,0.06);border-color:rgba(217,31,44,0.25);color:var(--red);font-size:12px;">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:middle;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>Supprimer
+      <button class="btn btn-sm" id="btnDeleteSel" onclick="deleteSelected()" style="background:#122C43;border-color:#122C43;color:#fff;font-size:12px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:middle;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>Supprimer
       </button>
       <span id="selCount" style="font-size:12px;color:var(--muted);margin-left:4px;"></span>
     </div>
@@ -1084,15 +1087,47 @@ function renderBadges(inv) {
 
 /* ══ EXTRACTION ══════════════════════════════════════ */
 function updateBar(){
-  const done=S.invoices.filter(i=>i.status==='validated'||i.status==='skipped').length;
-  const total=S.invoices.length;
-  const pending=S.invoices.filter(i=>i.status==='pending').length;
+  // Progress bar — session courante uniquement (hors fromRestore)
+  const current=S.invoices.filter(i=>!i.fromRestore);
+  const done=current.filter(i=>i.status==='validated'||i.status==='skipped').length;
+  const total=current.length;
+  const pending=current.filter(i=>i.status==='pending').length;
+
   document.getElementById('btnExtract').disabled=pending===0||S.busy;
-  document.getElementById('btnExport').style.display=done>0?'':'none';
+  // Exporter visible si au moins une facture (session ou DB) est validée/ignorée
+  const anyDone=S.invoices.some(i=>i.status==='validated'||i.status==='skipped');
+  document.getElementById('btnExport').style.display=anyDone?'':'none';
+
+  const progBarArea=document.getElementById('progBarArea');
   if(total>0){
     document.getElementById('progWrap').style.display='flex';
+    progBarArea.style.display='flex';
     document.getElementById('progFill').style.width=Math.round(done/total*100)+'%';
     document.getElementById('progTxt').textContent=`${done} / ${total}`;
+  } else {
+    progBarArea.style.display='none';
+  }
+
+  // Stats DB — toutes les factures en mémoire (y compris fromRestore)
+  const all=S.invoices;
+  const nCloturees=all.filter(i=>i.paytStatus==='Clôturée'&&i.pushStatus==='success').length;
+  const nValidated=all.filter(i=>i.pushStatus==='success'&&i.paytStatus!=='Clôturée').length;
+  const nOpen=all.filter(i=>i.pushStatus!=='success'&&i.paytStatus!=='Clôturée').length;
+
+  const dbStats=document.getElementById('dbStats');
+  if(all.length>0){
+    document.getElementById('progWrap').style.display='flex';
+    dbStats.style.display='inline-flex';
+    dbStats.innerHTML=
+      `<span style="color:var(--muted);font-size:11px;white-space:nowrap;">Total de vos factures enregistrées</span>`+
+      `<span style="display:inline-flex;align-items:center;gap:3px;color:var(--red);" title="Factures clôturées">`+
+        `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>${nCloturees}</span>`+
+      `<span style="display:inline-flex;align-items:center;gap:3px;color:#32C082;" title="Factures envoyées vers PAYT">`+
+        `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>${nValidated}</span>`+
+      `<span style="display:inline-flex;align-items:center;gap:3px;color:var(--muted);" title="Factures ouvertes (non envoyées)">`+
+        `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9v11h18V9"/><path d="M9 22V12h6v10"/><path d="M21 9l-9-7-9 7"/></svg>${nOpen}</span>`;
+  } else {
+    dbStats.style.display='none';
   }
 }
 
@@ -1384,7 +1419,7 @@ function renderExpTable(){
       }
       if(col.key==='_amount_paid'){
         const v=row._inv.amountPaid??'';
-        const locked=inv.pushStatus==='success'&&inv.paytStatus==='Clôturée';
+        const locked=inv.pushStatus==='success'&&(inv.paytStatus==='Clôturée'||inv.paytStatus==='Payée'||(parseFloat(inv.amountPaid)||0)>0);
         if(locked){
           return `<td style="min-width:110px;"><div style="display:flex;align-items:center;gap:4px;">`+
             `<span style="width:80px;padding:4px 6px;font-size:12px;font-family:var(--font);text-align:right;color:var(--muted);display:inline-block;">${esc(String(v||'—'))}</span>`+
@@ -1557,10 +1592,13 @@ document.addEventListener('click',()=>{
 function showExport(){
   const val=S.invoices.filter(i=>i.status==='validated');
   const skip=S.invoices.filter(i=>i.status==='skipped');
+  const nPayees=S.invoices.filter(i=>i.paytStatus==='Payée'||parseFloat(i.data?.invoice_open_amount_inc_vat)===0).length;
+  const nCloturees=S.invoices.filter(i=>i.paytStatus==='Clôturée').length;
   document.getElementById('expStats').innerHTML=`
     <div class="exp-stat"><div class="exp-stat-n">${S.invoices.length}</div><div class="exp-stat-l">Total</div></div>
     <div class="exp-stat"><div class="exp-stat-n" style="color:var(--teal-text);">${val.length}</div><div class="exp-stat-l">Validées</div></div>
-    <div class="exp-stat"><div class="exp-stat-n" style="color:var(--amber-text);">${skip.length}</div><div class="exp-stat-l">Ignorées</div></div>`;
+    <div class="exp-stat"><div class="exp-stat-n" style="color:#32C082;">${nPayees}</div><div class="exp-stat-l">Payées</div></div>
+    <div class="exp-stat"><div class="exp-stat-n" style="color:var(--red);">${nCloturees}</div><div class="exp-stat-l">Clôturées</div></div>`;
   expSort={key:null,dir:'asc'};
   selectedInvoices.clear();
   updateSelCount();
