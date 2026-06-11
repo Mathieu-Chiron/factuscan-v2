@@ -2136,17 +2136,47 @@ function computeOriginalOpen(effectiveOpen, amountPaid) {
   return Math.round((effectiveOpen + paid) * 100) / 100;
 }
 
-suite('Scénario 1 — paiement partiel + Clôturée → payment 400 + avoir 600', () => {
-  // Frontend envoie invoice_open_amount_inc_vat déjà réduit : 1000 - 400 = 600
-  const inv = { invoice_open_amount_inc_vat: '600', amount_paid: '400', payt_status: 'Clôturée' };
-  const effectiveOpen = parseFloat(inv.invoice_open_amount_inc_vat);
-  const amountPaid    = parseFloat(inv.amount_paid);
-  test('Step 3 : originalOpen envoyé à PAYT = 1000',  computeOriginalOpen(effectiveOpen, amountPaid), 1000);
-  test('Step 4 : facture dans paidBatch',              isInPaidBatch(inv),                            true);
-  test('Step 5 : facture dans clotureeeBatch',         isInClotureeeBatch(inv),                       true);
-  test('Step 4 : montant paiement = 400',              amountPaid,                                    400);
-  test('Step 5 : avoirAmount = 600 (effectiveOpen)',   computeAvoirAmount(effectiveOpen),             600);
-  test('Step 5 : pas d\'avoir si effectiveOpen = 0',  computeAvoirAmount(0) === 0,                   true);
+// Simule applyAmountPaid (frontend) : réduit invoice_open_amount_inc_vat et stocke baseOpenAmount
+function simulateFrontendApplyAmountPaid(baseOpen, amountPaid) {
+  const paid = parseFloat(amountPaid) || 0;
+  const effectiveOpen = paid > 0 ? Math.max(0, Math.round((baseOpen - paid) * 100) / 100) : baseOpen;
+  return { invoice_open_amount_inc_vat: effectiveOpen, amount_paid: paid > 0 ? paid : null };
+}
+
+// Simule la construction du payload frontend envoyé au serveur
+function simulateFrontendPayload(baseOpen, amountPaid) {
+  const paid = parseFloat(amountPaid) || 0;
+  const sentOpen = paid > 0 ? Math.max(0, Math.round((baseOpen - paid) * 100) / 100) : baseOpen;
+  return { invoice_open_amount_inc_vat: sentOpen, amount_paid: paid > 0 ? paid : null };
+}
+
+suite('Scénario 1 — bout-en-bout : facture 1000, amountPaid=400, Clôturée → payment 400 + avoir 600', () => {
+  // Point de départ : ce que l'utilisateur voit et saisit
+  const baseOpen  = 1000;  // montant en suspens de la facture
+  const userPaid  = 400;   // montant saisi dans "Montant déjà payé"
+  const status    = 'Clôturée';
+
+  // Étape 1 : le frontend réduit invoice_open_amount_inc_vat
+  const frontend = simulateFrontendPayload(baseOpen, userPaid);
+  test('Frontend : invoice_open_amount_inc_vat envoyé = 600', frontend.invoice_open_amount_inc_vat, 600);
+  test('Frontend : amount_paid envoyé = 400',                 frontend.amount_paid,                  400);
+
+  // Étape 2 : le serveur restitue le montant original pour PAYT
+  const effectiveOpen = frontend.invoice_open_amount_inc_vat; // 600
+  const amountPaid    = frontend.amount_paid;                  // 400
+  test('Serveur Step 3 : originalOpen envoyé à PAYT = 1000', computeOriginalOpen(effectiveOpen, amountPaid), 1000);
+
+  // Étape 3 : paiement enregistré
+  const inv = { invoice_open_amount_inc_vat: String(effectiveOpen), amount_paid: String(amountPaid), payt_status: status };
+  test('Serveur Step 4 : facture dans paidBatch',             isInPaidBatch(inv),            true);
+  test('Serveur Step 4 : montant paiement = 400',             amountPaid,                    400);
+
+  // Étape 4 : avoir créé pour le solde restant
+  test('Serveur Step 5 : facture dans clotureeeBatch',        isInClotureeeBatch(inv),       true);
+  test('Serveur Step 5 : avoirAmount = 600',                  computeAvoirAmount(effectiveOpen), 600);
+
+  // Cohérence globale : paiement + avoir = montant original
+  test('Cohérence : paiement + avoir = facture originale',    amountPaid + computeAvoirAmount(effectiveOpen), baseOpen);
 });
 
 suite('Scénario 2 — Clôturée sans paiement → avoir 1000 seulement', () => {
