@@ -1910,6 +1910,7 @@ if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https:
       S.invoices.forEach(inv=>{ if(!inv.targetCompany) inv.targetCompany={id:only.id,name:only.name}; });
       saveDataset();
     }
+    if(typeof renderExpTable==='function') renderExpTable();
   } catch(e){}
 })();
 /* ══ DATASET SAVE / RESTORE ══════════════════════════ */
