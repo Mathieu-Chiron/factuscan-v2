@@ -376,7 +376,7 @@ html,body{overflow:hidden;}
       <button class="btn btn-sm" id="btnSetCloturee" onclick="bulkSetStatus('Clôturée')" style="background:rgba(217,31,44,0.06);border-color:rgba(217,31,44,0.25);color:var(--red);font-size:12px;">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:middle;"><path d="M18 6L6 18M6 6l12 12"/></svg>Enregistrer comme Clôturées
       </button>
-      <button class="btn btn-sm" id="btnDeleteSel" onclick="deleteSelected()" style="background:rgba(217,31,44,0.06);border-color:rgba(217,31,44,0.25);color:var(--red);font-size:12px;">
+      <button class="btn btn-sm" id="btnDeleteSel" onclick="deleteSelected()" style="background:#111;border-color:#111;color:#fff;font-size:12px;">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:middle;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>Supprimer
       </button>
       <span id="selCount" style="font-size:12px;color:var(--muted);margin-left:4px;"></span>
@@ -438,11 +438,15 @@ html,body{overflow:hidden;}
   </div>
 </div>
 
-<!-- ═══ DUPLICATE TOAST ═══════════════════════════════ -->
-<div class="dup-toast" id="dupToast">
-  <button class="dup-toast-close" onclick="closeDupToast()">✕</button>
-  <div class="dup-toast-title">⚠ Facture(s) déjà présente(s)</div>
-  <div class="dup-toast-body" id="dupToastBody"></div>
+<!-- ═══ DUPLICATE MODAL ═══════════════════════════════ -->
+<div class="modal-bg" id="dupModalBg" onclick="closeDupModal()">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:420px;">
+    <div class="modal-title">Facture(s) déjà présente(s)</div>
+    <div id="dupModalBody" style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:18px;"></div>
+    <div class="modal-foot" style="justify-content:center;">
+      <button class="btn btn-primary" onclick="closeDupModal()">Compris</button>
+    </div>
+  </div>
 </div>
 
 <!-- ═══ SKIPPED WARNING MODAL ════════════════════════ -->
@@ -1583,7 +1587,13 @@ function showExport(){
   renderExpTable();
   document.getElementById('screen-export').classList.add('show');
 }
-function hideExport(){document.getElementById('screen-export').classList.remove('show');document.getElementById('screen-main').classList.remove('in');document.getElementById('screen-upload').style.display='';setTimeout(()=>document.getElementById('screen-upload').classList.remove('out'),10);}
+function hideExport(){
+  document.getElementById('screen-export').classList.remove('show');
+  document.getElementById('screen-main').classList.add('in');
+  renderSidebar(); updateBar();
+  if(S.cur<0){const fi=S.invoices.findIndex(i=>!i.fromRestore);if(fi>=0)selectInv(fi);}
+  else selectInv(S.cur);
+}
 
 /* ══ PUSH TO PAYT ════════════════════════════════════ */
 async function pushToPayt(){
@@ -1775,7 +1785,13 @@ function confirmRestart(){
   document.getElementById('restartWarnBg').classList.add('show');
 }
 function closeRestartWarn(){document.getElementById('restartWarnBg').classList.remove('show');}
-function goToUpload(){closeRestartWarn();hideExport();document.getElementById('screen-main').classList.remove('in');document.getElementById('screen-upload').style.display='';setTimeout(()=>document.getElementById('screen-upload').classList.remove('out'),10);}
+function goToUpload(){
+  closeRestartWarn();
+  document.getElementById('screen-export').classList.remove('show');
+  document.getElementById('screen-main').classList.remove('in');
+  document.getElementById('screen-upload').style.display='';
+  setTimeout(()=>document.getElementById('screen-upload').classList.remove('out'),10);
+}
 
 /* ══ MODAL ═══════════════════════════════════════════ */
 function openModal(){
@@ -1847,16 +1863,14 @@ function preExportCheck(){
 function closeSkipWarn(){document.getElementById('skipWarnBg').classList.remove('show');}
 function closeSkipWarnAndExport(){closeSkipWarn();showExport();}
 
-/* ══ DUPLICATE TOAST ════════════════════════════════ */
-let _dupTimer=null;
+/* ══ DUPLICATE MODAL ════════════════════════════════ */
 function showDupToast(names){
-  const body=names.map(n=>`<b>${n}</b> est déjà présente et ne sera ajoutée qu'une seule fois.`).join('<br>');
-  document.getElementById('dupToastBody').innerHTML=body;
-  document.getElementById('dupToast').classList.add('show');
-  clearTimeout(_dupTimer);
-  _dupTimer=setTimeout(closeDupToast,5000);
+  const body=names.map(n=>`<b>${esc(n)}</b> est déjà présente dans votre liste et ne sera pas ajoutée à nouveau.`).join('<br>');
+  document.getElementById('dupModalBody').innerHTML=body;
+  document.getElementById('dupModalBg').classList.add('show');
 }
-function closeDupToast(){document.getElementById('dupToast').classList.remove('show');}
+function closeDupModal(){document.getElementById('dupModalBg').classList.remove('show');}
+function closeDupToast(){closeDupModal();}
 
 /* ══ REMOVE INVOICE ══════════════════════════════════ */
 let _removeIdx=-1;
@@ -1923,13 +1937,11 @@ function closeClearSession(){document.getElementById('clearSessionBg').classList
 function clearSession(){
   closeClearSession();
   S.invoices=[];S.cur=-1;S.busy=false;S.zipDownloaded=false;
-  hideExport();
+  document.getElementById('screen-export').classList.remove('show');
   document.getElementById('screen-main').classList.remove('in');
   const su=document.getElementById('screen-upload');
-  su.style.display='flex';
-  su.classList.remove('out');
-  updateSessionBanner();
-  updateBar();
+  su.style.display='flex';su.classList.remove('out');
+  updateSessionBanner();updateBar();
 }
 
 /* ══ UTILS ═══════════════════════════════════════════ */
@@ -1971,11 +1983,10 @@ function saveDataset(){
 }
 
 async function saveToDb(snap){
-  if(!snap||!snap.length) return;
   try{
     await fetch('/api/db-save',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({session_id:USER_ID,invoices:snap}),
+      body:JSON.stringify({session_id:USER_ID,invoices:snap||[]}),
     });
   }catch(e){}
 }
@@ -2031,8 +2042,8 @@ function restoreDataset(){
 if(sessionStorage.getItem('adminAuth')==='1'){
   document.getElementById('btnSettings').style.display='';
 }
-console.log('%cFactuScan — version 71','color:#55D6DE;font-weight:700;font-size:13px;');
+console.log('%cFactuScan — version 72','color:#55D6DE;font-weight:700;font-size:13px;');
 </script>
-<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 71</div>
+<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 72</div>
 </body>
 </html>

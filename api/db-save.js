@@ -29,7 +29,7 @@ export default async function handler(req, res) {
 
   const { session_id, invoices } = req.body || {};
   if (!session_id) return res.status(400).json({ error: 'missing_session_id' });
-  if (!Array.isArray(invoices) || !invoices.length) return res.status(400).json({ error: 'missing_invoices' });
+  if (!Array.isArray(invoices)) return res.status(400).json({ error: 'missing_invoices' });
 
   const sql = neon(process.env.DATABASE_URL);
 
@@ -63,6 +63,14 @@ export default async function handler(req, res) {
           push_status    = EXCLUDED.push_status,
           updated_at     = NOW()
       `;
+    }
+
+    // Delete rows that were removed in the UI (keep only what is in current snapshot)
+    const fileNames = invoices.map(inv => inv.fileName);
+    if (fileNames.length > 0) {
+      await sql`DELETE FROM invoices WHERE session_id = ${session_id} AND file_name != ALL(${fileNames})`;
+    } else {
+      await sql`DELETE FROM invoices WHERE session_id = ${session_id}`;
     }
 
     return res.status(200).json({ ok: true });
