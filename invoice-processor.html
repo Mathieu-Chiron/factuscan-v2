@@ -726,7 +726,9 @@ async function handleFiles(list) {
   if (!toUpload.length) return;
 
   renderSidebar(); updateBar();
-  if (S.cur===-1) selectInv(0);
+  if (S.cur===-1 || S.invoices[S.cur]?.fromRestore) {
+    const fi=S.invoices.findIndex(i=>!i.fromRestore); if(fi>=0) selectInv(fi);
+  }
 
   if (needsTransition) {
     document.getElementById('screen-upload').classList.add('out');
@@ -1592,8 +1594,10 @@ function hideExport(){
   document.getElementById('screen-export').classList.remove('show');
   document.getElementById('screen-main').classList.add('in');
   renderSidebar(); updateBar();
-  if(S.cur<0){const fi=S.invoices.findIndex(i=>!i.fromRestore);if(fi>=0)selectInv(fi);}
-  else selectInv(S.cur);
+  // Land on a session invoice (non-restored); only fall back to S.cur if it is one
+  const curOk = S.cur>=0 && S.invoices[S.cur] && !S.invoices[S.cur].fromRestore;
+  if(curOk) selectInv(S.cur);
+  else { const fi=S.invoices.findIndex(i=>!i.fromRestore); if(fi>=0) selectInv(fi); }
 }
 
 /* ══ PUSH TO PAYT ════════════════════════════════════ */
