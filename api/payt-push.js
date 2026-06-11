@@ -1,10 +1,12 @@
 // api/payt-push.js
-// Pushes invoices (+ contacts + debtors) to PAYT in up to 5 steps:
+// Pushes invoices (+ contacts + debtors) to PAYT in up to 4 steps:
 //   1. POST /v1/contacts — upsert contacts with address (deduplicated by contact_identifier)
 //   2. POST /v1/debtors  — link contacts to administration as debtors
-//   3. POST /v1/invoices — create invoices
-//   4. PUT  /v1/payments — record payment if amountPaid > 0 (partial or full)
-//   5. POST /v1/invoices + PUT /v1/payments — credit note (avoir) for Clôturée invoices
+//   3. POST /v1/invoices — create invoices (book_amount_open already net of any partial payment)
+//   4. POST /v1/invoices — credit note (avoir) + re-POST original invoice with open=0 for Clôturée
+//
+// NOTE: /v1/payments returns 405 (not supported). Partial payments are reflected directly via
+// book_amount_open in Step 3. Closing is done via a second POST of the original invoice in Step 4.
 //
 // Expected body:
 // {
@@ -162,10 +164,8 @@ export default async function handler(req, res) {
       administration_id: administrationId,
       invoices: batch.map(inv => {
         // effectiveOpen is already reduced by amountPaid by the frontend (applyAmountPaid).
-        // PAYT must receive the original open amount (before any payment), so we add it back.
+        // Send it directly — PAYT will show the invoice as partially paid.
         const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
-        const amountPaid    = parseFloat(inv.amount_paid) || 0;
-        const originalOpen  = Math.round((effectiveOpen + amountPaid) * 100) / 100;
         return {
           debtor_number:     inv.debtor_number,
           invoice_number:    inv.invoice_number,
@@ -173,8 +173,8 @@ export default async function handler(req, res) {
           due_date:          inv.invoice_due_date,
           book_amount_total: String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
           amount_total:      String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
-          book_amount_open:  String(originalOpen),
-          amount_open:       String(originalOpen),
+          book_amount_open:  String(effectiveOpen),
+          amount_open:       String(effectiveOpen),
           currency_code:     inv.currency_code || 'EUR',
         };
       }),
@@ -199,77 +199,7 @@ export default async function handler(req, res) {
           if (!results[inv.invoice_number].errors.length) results[inv.invoice_number].success = true;
         });
 
-        // ── GET partagé : récupère les IDs PAYT des factures qu'on vient de créer.
-        // Retry jusqu'à 4 fois (délai croissant) car PAYT peut avoir une latence d'indexation
-        // entre le POST /v1/invoices (Step 3) et la disponibilité via GET.
-        // Ce cache est réutilisé dans Step 4 ET Step 5b pour éviter tout problème de timing.
-        const invoiceNumbers = new Set(batch.map(inv => inv.invoice_number));
-        let paytIdCache = new Map(); // invoiceNumber → paytId
-        for (let attempt = 0; attempt < 4; attempt++) {
-          if (attempt > 0) await new Promise(r => setTimeout(r, 500 * attempt));
-          const gr = await fetchWithRetry(
-            `${PAYT_BASE}/v1/invoices?administration_id=${encodeURIComponent(administrationId)}`,
-            { method: 'GET', headers }
-          );
-          const gdata = await gr.json().catch(() => ({}));
-          console.log(`[payt-push ${ts()}] GET invoices (attempt ${attempt + 1}):`, gr.status, `found ${gdata?.data?.length ?? 0} entries`);
-          const list = gdata?.data ?? gdata?.invoices ?? (Array.isArray(gdata) ? gdata : []);
-          list.forEach(i => {
-            if (invoiceNumbers.has(i.invoice_number)) {
-              const id = i.id ?? i.invoice_id;
-              if (id) paytIdCache.set(i.invoice_number, id);
-            }
-          });
-          // Stop retrying as soon as all needed IDs are found
-          const missing = [...invoiceNumbers].filter(n => !paytIdCache.has(n));
-          console.log(`[payt-push ${ts()}] IDs trouvés: ${paytIdCache.size}/${invoiceNumbers.size} — manquants: ${missing.join(', ') || 'aucun'}`);
-          if (missing.length === 0) break;
-        }
-
-        // ── Step 4: PUT /v1/payments — dès que amountPaid > 0 (partiel ou total) ──
-        const paidBatch = batch.filter(inv =>
-          (parseFloat(inv.amount_paid) || 0) > 0
-          && !results[inv.invoice_number].errors.length
-        );
-        console.log(`[payt-push ${ts()}] paidBatch size: ${paidBatch.length}`);
-
-        for (const inv of paidBatch) {
-          try {
-            const paytId = paytIdCache.get(inv.invoice_number);
-            console.log(`[payt-push ${ts()}] invoice_id for ${inv.invoice_number}: ${paytId ?? 'NOT FOUND'}`);
-
-            if (!paytId) {
-              results[inv.invoice_number].warnings.push('Paiement non enregistré : ID PAYT introuvable');
-              continue;
-            }
-
-            const pmPayload = {
-              administration_id: administrationId,
-              payments: [{
-                invoice_id:        paytId,
-                amount:            String(parseFloat(inv.amount_paid)),
-                book_amount:       String(parseFloat(inv.amount_paid)),
-                origin_identifier: `PAY-${inv.invoice_number}`,
-                cost_type:         'principal',
-                transaction_type:  'credit',
-                payment_date:      today,
-              }],
-            };
-            console.log(`[payt-push ${ts()}] PAYMENT payload:`, JSON.stringify(pmPayload));
-            const pr = await fetchWithRetry(`${PAYT_BASE}/v1/payments`, { method: 'POST', headers, body: JSON.stringify(pmPayload) });
-            const pdata = await pr.json().catch(() => ({}));
-            console.log(`[payt-push ${ts()}] PAYMENT response`, pr.status, JSON.stringify(pdata));
-            if (!pr.ok) {
-              results[inv.invoice_number].warnings.push(
-                `Paiement non enregistré [${pr.status}]: ${pdata?.error?.message || pdata?.message || 'Erreur inconnue'}`
-              );
-            }
-          } catch (e) {
-            results[inv.invoice_number].warnings.push('Impossible d\'enregistrer le paiement sur PAYT');
-          }
-        }
-
-        // ── Step 5: credit notes for "Clôturée" invoices ──
+        // ── Step 4: credit notes for "Clôturée" invoices ──
         const clotureeeBatch = batch.filter(inv =>
           inv.payt_status === 'Clôturée' && !results[inv.invoice_number].errors.length
         );
@@ -289,7 +219,7 @@ export default async function handler(req, res) {
           console.log(`[payt-push ${ts()}] création avoir ${creditNumber} pour montant=${avoirAmount} (open=${effectiveOpen} paid=${amountPaid})`);
 
           try {
-            // ── 5a: POST credit note invoice ──
+            // ── 4a: POST credit note invoice ──
             const cnPayload = {
               administration_id: administrationId,
               invoices: [{
@@ -321,36 +251,31 @@ export default async function handler(req, res) {
               continue;
             }
 
-            // ── 5b: PUT /v1/payments sur la facture originale pour solder le reste ──
-            // Réutilise le cache d'IDs (pas de nouveau GET nécessaire).
-            const paytId2 = paytIdCache.get(inv.invoice_number);
-            console.log(`[payt-push ${ts()}] invoice_id (avoir) for ${inv.invoice_number}: ${paytId2 ?? 'NOT FOUND'}`);
-
-            if (!paytId2) {
-              results[inv.invoice_number].warnings.push(`Avoir créé (${creditNumber}) mais solde original non soldé : ID PAYT introuvable`);
-              continue;
-            }
-
-            const cn_pmPayload = {
+            // ── 4b: re-POST original invoice with book_amount_open=0 to close it ──
+            // /v1/payments returns 405; closing is done via upsert on POST /v1/invoices.
+            const closePayload = {
               administration_id: administrationId,
-              payments: [{
-                invoice_id:        paytId2,
-                amount:            String(avoirAmount),
-                book_amount:       String(avoirAmount),
-                origin_identifier: `AVOIR-${inv.invoice_number}`,
-                cost_type:         'principal',
-                transaction_type:  'credit',
-                payment_date:      today,
+              invoices: [{
+                debtor_number:     inv.debtor_number,
+                invoice_number:    inv.invoice_number,
+                invoice_date:      inv.invoice_date,
+                due_date:          inv.invoice_due_date,
+                book_amount_total: String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
+                amount_total:      String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
+                book_amount_open:  '0',
+                amount_open:       '0',
+                currency_code:     inv.currency_code || 'EUR',
               }],
             };
-            console.log(`[payt-push ${ts()}] AVOIR PAYMENT payload:`, JSON.stringify(cn_pmPayload));
-            const cn_pr = await fetchWithRetry(`${PAYT_BASE}/v1/payments`, { method: 'POST', headers, body: JSON.stringify(cn_pmPayload) });
-            const cn_pdata = await cn_pr.json().catch(() => ({}));
-            console.log(`[payt-push ${ts()}] AVOIR PAYMENT response`, cn_pr.status, JSON.stringify(cn_pdata));
+            console.log(`[payt-push ${ts()}] CLOSE INVOICE payload:`, JSON.stringify(closePayload));
+            const closeRes = await fetchWithRetry(`${PAYT_BASE}/v1/invoices`, { method: 'POST', headers, body: JSON.stringify(closePayload) });
+            const closeData = await closeRes.json().catch(() => ({}));
+            console.log(`[payt-push ${ts()}] CLOSE INVOICE response`, closeRes.status, JSON.stringify(closeData));
 
-            if (!cn_pr.ok) {
+            const closeErrors = closeData?.errors?.[inv.invoice_number] || [];
+            if ((!closeRes.ok && !closeData?.errors) || closeErrors.length) {
               results[inv.invoice_number].warnings.push(
-                `Avoir créé (${creditNumber}) mais solde non soldé [${cn_pr.status}]: ${cn_pdata?.error?.message || cn_pdata?.message || 'Erreur inconnue'}`
+                `Avoir créé (${creditNumber}) mais solde non soldé [${closeRes.status}]: ${closeErrors.join(', ') || closeData?.error?.message || closeData?.message || 'Erreur inconnue'}`
               );
             } else {
               results[inv.invoice_number].credit_note = creditNumber;
