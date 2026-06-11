@@ -1,8 +1,10 @@
 // api/payt-push.js
-// Pushes invoices (+ contacts + debtors) to PAYT in three batch steps:
+// Pushes invoices (+ contacts + debtors) to PAYT in up to 5 steps:
 //   1. POST /v1/contacts — upsert contacts with address (deduplicated by contact_identifier)
 //   2. POST /v1/debtors  — link contacts to administration as debtors
-//   3. POST /v1/invoices — create invoices; fully-paid ones include a payments[{transaction_type:"credit"}]
+//   3. POST /v1/invoices — create invoices
+//   4. PUT  /v1/payments — record payment if amountPaid > 0 (partial or full)
+//   5. POST /v1/invoices + PUT /v1/payments — credit note (avoir) for Clôturée invoices
 //
 // Expected body:
 // {
@@ -193,17 +195,16 @@ export default async function handler(req, res) {
           if (!results[inv.invoice_number].errors.length) results[inv.invoice_number].success = true;
         });
 
-        // ── Step 4: POST /v1/payments for fully paid invoices ──
+        // ── Step 4: PUT /v1/payments — dès que amountPaid > 0 (partiel ou total) ──
         batch.forEach(inv => {
           const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
           const amountPaid    = parseFloat(inv.amount_paid) || 0;
           console.log(`[payt-push ${ts()}] payment check ${inv.invoice_number}: open=${effectiveOpen} paid=${amountPaid} errors=${results[inv.invoice_number].errors.length}`);
         });
-        const paidBatch = batch.filter(inv => {
-          const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
-          return effectiveOpen === 0 && (parseFloat(inv.amount_paid) || 0) > 0
-            && !results[inv.invoice_number].errors.length;
-        });
+        const paidBatch = batch.filter(inv =>
+          (parseFloat(inv.amount_paid) || 0) > 0
+          && !results[inv.invoice_number].errors.length
+        );
         console.log(`[payt-push ${ts()}] paidBatch size: ${paidBatch.length}`);
 
         for (const inv of paidBatch) {
@@ -259,12 +260,15 @@ export default async function handler(req, res) {
 
         for (const inv of clotureeeBatch) {
           const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
-          if (effectiveOpen === 0) {
-            console.log(`[payt-push ${ts()}] ${inv.invoice_number} — open=0, pas d'avoir nécessaire`);
+          const amountPaid    = parseFloat(inv.amount_paid) || 0;
+          // Montant de l'avoir = solde restant après déduction du paiement partiel éventuel
+          const avoirAmount   = Math.max(0, Math.round((effectiveOpen - amountPaid) * 100) / 100);
+          if (avoirAmount === 0) {
+            console.log(`[payt-push ${ts()}] ${inv.invoice_number} — solde restant=0, pas d'avoir nécessaire`);
             continue;
           }
           const creditNumber = `AVOIR-${inv.invoice_number}`;
-          console.log(`[payt-push ${ts()}] création avoir ${creditNumber} pour montant=${effectiveOpen}`);
+          console.log(`[payt-push ${ts()}] création avoir ${creditNumber} pour montant=${avoirAmount} (open=${effectiveOpen} paid=${amountPaid})`);
 
           try {
             // ── 5a: POST credit note invoice ──
@@ -275,8 +279,8 @@ export default async function handler(req, res) {
                 invoice_number:    creditNumber,
                 invoice_date:      today,
                 due_date:          today,
-                book_amount_total: String(-effectiveOpen),
-                amount_total:      String(-effectiveOpen),
+                book_amount_total: String(-avoirAmount),
+                amount_total:      String(-avoirAmount),
                 book_amount_open:  '0',
                 amount_open:       '0',
                 currency_code:     inv.currency_code || 'EUR',
@@ -319,8 +323,8 @@ export default async function handler(req, res) {
               administration_id: administrationId,
               payments: [{
                 invoice_id:        paytId2,
-                amount:            String(effectiveOpen),
-                book_amount:       String(effectiveOpen),
+                amount:            String(avoirAmount),
+                book_amount:       String(avoirAmount),
                 origin_identifier: `AVOIR-${inv.invoice_number}`,
                 cost_type:         'principal',
                 transaction_type:  'credit',
