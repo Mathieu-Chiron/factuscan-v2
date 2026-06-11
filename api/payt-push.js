@@ -256,7 +256,7 @@ export default async function handler(req, res) {
               }],
             };
             console.log(`[payt-push ${ts()}] PAYMENT payload:`, JSON.stringify(pmPayload));
-            const pr = await fetchWithRetry(`${PAYT_BASE}/v1/payments`, { method: 'PUT', headers, body: JSON.stringify(pmPayload) });
+            const pr = await fetchWithRetry(`${PAYT_BASE}/v1/payments`, { method: 'POST', headers, body: JSON.stringify(pmPayload) });
             const pdata = await pr.json().catch(() => ({}));
             console.log(`[payt-push ${ts()}] PAYMENT response`, pr.status, JSON.stringify(pdata));
             if (!pr.ok) {
@@ -344,7 +344,7 @@ export default async function handler(req, res) {
               }],
             };
             console.log(`[payt-push ${ts()}] AVOIR PAYMENT payload:`, JSON.stringify(cn_pmPayload));
-            const cn_pr = await fetchWithRetry(`${PAYT_BASE}/v1/payments`, { method: 'PUT', headers, body: JSON.stringify(cn_pmPayload) });
+            const cn_pr = await fetchWithRetry(`${PAYT_BASE}/v1/payments`, { method: 'POST', headers, body: JSON.stringify(cn_pmPayload) });
             const cn_pdata = await cn_pr.json().catch(() => ({}));
             console.log(`[payt-push ${ts()}] AVOIR PAYMENT response`, cn_pr.status, JSON.stringify(cn_pdata));
 
