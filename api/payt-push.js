@@ -199,12 +199,34 @@ export default async function handler(req, res) {
           if (!results[inv.invoice_number].errors.length) results[inv.invoice_number].success = true;
         });
 
+        // ── GET partagé : récupère les IDs PAYT des factures qu'on vient de créer.
+        // Retry jusqu'à 4 fois (délai croissant) car PAYT peut avoir une latence d'indexation
+        // entre le POST /v1/invoices (Step 3) et la disponibilité via GET.
+        // Ce cache est réutilisé dans Step 4 ET Step 5b pour éviter tout problème de timing.
+        const invoiceNumbers = new Set(batch.map(inv => inv.invoice_number));
+        let paytIdCache = new Map(); // invoiceNumber → paytId
+        for (let attempt = 0; attempt < 4; attempt++) {
+          if (attempt > 0) await new Promise(r => setTimeout(r, 500 * attempt));
+          const gr = await fetchWithRetry(
+            `${PAYT_BASE}/v1/invoices?administration_id=${encodeURIComponent(administrationId)}`,
+            { method: 'GET', headers }
+          );
+          const gdata = await gr.json().catch(() => ({}));
+          console.log(`[payt-push ${ts()}] GET invoices (attempt ${attempt + 1}):`, gr.status, `found ${gdata?.data?.length ?? 0} entries`);
+          const list = gdata?.data ?? gdata?.invoices ?? (Array.isArray(gdata) ? gdata : []);
+          list.forEach(i => {
+            if (invoiceNumbers.has(i.invoice_number)) {
+              const id = i.id ?? i.invoice_id;
+              if (id) paytIdCache.set(i.invoice_number, id);
+            }
+          });
+          // Stop retrying as soon as all needed IDs are found
+          const missing = [...invoiceNumbers].filter(n => !paytIdCache.has(n));
+          console.log(`[payt-push ${ts()}] IDs trouvés: ${paytIdCache.size}/${invoiceNumbers.size} — manquants: ${missing.join(', ') || 'aucun'}`);
+          if (missing.length === 0) break;
+        }
+
         // ── Step 4: PUT /v1/payments — dès que amountPaid > 0 (partiel ou total) ──
-        batch.forEach(inv => {
-          const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
-          const amountPaid    = parseFloat(inv.amount_paid) || 0;
-          console.log(`[payt-push ${ts()}] payment check ${inv.invoice_number}: open=${effectiveOpen} paid=${amountPaid} errors=${results[inv.invoice_number].errors.length}`);
-        });
         const paidBatch = batch.filter(inv =>
           (parseFloat(inv.amount_paid) || 0) > 0
           && !results[inv.invoice_number].errors.length
@@ -213,16 +235,7 @@ export default async function handler(req, res) {
 
         for (const inv of paidBatch) {
           try {
-            // GET invoice to retrieve PAYT internal id
-            const getUrl = `${PAYT_BASE}/v1/invoices?administration_id=${encodeURIComponent(administrationId)}`;
-            const gr = await fetchWithRetry(getUrl, { method: 'GET', headers });
-            const gdata = await gr.json().catch(() => ({}));
-            console.log(`[payt-push ${ts()}] GET invoice ${inv.invoice_number}:`, gr.status, JSON.stringify(gdata));
-
-            // Probe common response shapes for the internal id
-            const list = gdata?.data ?? gdata?.invoices ?? (Array.isArray(gdata) ? gdata : []);
-            const found = list.find?.(i => i.invoice_number === inv.invoice_number);
-            const paytId = found?.id ?? found?.invoice_id;
+            const paytId = paytIdCache.get(inv.invoice_number);
             console.log(`[payt-push ${ts()}] invoice_id for ${inv.invoice_number}: ${paytId ?? 'NOT FOUND'}`);
 
             if (!paytId) {
@@ -308,15 +321,9 @@ export default async function handler(req, res) {
               continue;
             }
 
-            // ── 5b: GET original invoice PAYT id → PUT /v1/payments to zero it out ──
-            const getUrl2 = `${PAYT_BASE}/v1/invoices?administration_id=${encodeURIComponent(administrationId)}`;
-            const gr2 = await fetchWithRetry(getUrl2, { method: 'GET', headers });
-            const gdata2 = await gr2.json().catch(() => ({}));
-            console.log(`[payt-push ${ts()}] GET (avoir) invoice ${inv.invoice_number}:`, gr2.status);
-
-            const list2 = gdata2?.data ?? gdata2?.invoices ?? (Array.isArray(gdata2) ? gdata2 : []);
-            const found2 = list2.find?.(i => i.invoice_number === inv.invoice_number);
-            const paytId2 = found2?.id ?? found2?.invoice_id;
+            // ── 5b: PUT /v1/payments sur la facture originale pour solder le reste ──
+            // Réutilise le cache d'IDs (pas de nouveau GET nécessaire).
+            const paytId2 = paytIdCache.get(inv.invoice_number);
             console.log(`[payt-push ${ts()}] invoice_id (avoir) for ${inv.invoice_number}: ${paytId2 ?? 'NOT FOUND'}`);
 
             if (!paytId2) {
