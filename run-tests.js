@@ -2109,3 +2109,54 @@ console.log(`\n${'─'.repeat(50)}`);
 console.log(`✓ ${pass} passed   ${fail>0?'✗ '+fail+' failed':''}`);
 console.log('─'.repeat(50));
 if(fail>0) process.exit(1);
+
+// ══════════════════════════════════════════════════════════════════
+// Logique open / clôturée / payée — 3 scénarios métier
+// Miroir de api/payt-push.js Step 4 + Step 5
+// ══════════════════════════════════════════════════════════════════
+
+function isInPaidBatch(inv) {
+  return (parseFloat(inv.amount_paid) || 0) > 0;
+}
+
+function isInClotureeeBatch(inv) {
+  return inv.payt_status === 'Clôturée';
+}
+
+function computeAvoirAmount(effectiveOpen, amountPaid) {
+  const paid = parseFloat(amountPaid) || 0;
+  return Math.max(0, Math.round((effectiveOpen - paid) * 100) / 100);
+}
+
+suite('Scénario 1 — paiement partiel + Clôturée → payment 400 + avoir 600', () => {
+  const inv = { invoice_open_amount_inc_vat: '1000', amount_paid: '400', payt_status: 'Clôturée' };
+  test('Step 4 : facture dans paidBatch',          isInPaidBatch(inv),                         true);
+  test('Step 5 : facture dans clotureeeBatch',     isInClotureeeBatch(inv),                    true);
+  test('Step 4 : montant paiement = 400',          parseFloat(inv.amount_paid),                400);
+  test('Step 5 : avoirAmount = 600',               computeAvoirAmount(1000, 400),              600);
+  test('Step 5 : pas d\'avoir si avoirAmount = 0', computeAvoirAmount(1000, 1000) === 0,       true);
+});
+
+suite('Scénario 2 — Clôturée sans paiement → avoir 1000 seulement', () => {
+  const inv = { invoice_open_amount_inc_vat: '1000', amount_paid: null, payt_status: 'Clôturée' };
+  test('Step 4 : facture hors paidBatch',          isInPaidBatch(inv),                         false);
+  test('Step 5 : facture dans clotureeeBatch',     isInClotureeeBatch(inv),                    true);
+  test('Step 5 : avoirAmount = 1000',              computeAvoirAmount(1000, null),             1000);
+  test('Step 5 : avoir non nul (différent de 0)',  computeAvoirAmount(1000, null) > 0,         true);
+});
+
+suite('Scénario 3 — paiement partiel sans clôture → payment 500 uniquement', () => {
+  const inv = { invoice_open_amount_inc_vat: '1000', amount_paid: '500', payt_status: null };
+  test('Step 4 : facture dans paidBatch',          isInPaidBatch(inv),                         true);
+  test('Step 5 : facture hors clotureeeBatch',     isInClotureeeBatch(inv),                    false);
+  test('Step 4 : montant paiement = 500',          parseFloat(inv.amount_paid),                500);
+  test('Step 5 : pas d\'avoir créé (non clôturée)', isInClotureeeBatch(inv) === false,         true);
+});
+
+suite('computeAvoirAmount — cas limites', () => {
+  test('paiement = 0 → avoir = openAmount',        computeAvoirAmount(1000, 0),                1000);
+  test('paiement = openAmount → avoir = 0',        computeAvoirAmount(1000, 1000),             0);
+  test('paiement > openAmount → avoir = 0 (pas négatif)', computeAvoirAmount(1000, 1200),      0);
+  test('montant décimal : 1000 - 333.33 = 666.67', computeAvoirAmount(1000, 333.33),           666.67);
+  test('null treated as 0 → avoir = openAmount',   computeAvoirAmount(500, null),              500);
+});
