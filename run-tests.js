@@ -2123,42 +2123,61 @@ function isInClotureeeBatch(inv) {
   return inv.payt_status === 'Clôturée';
 }
 
-function computeAvoirAmount(effectiveOpen, amountPaid) {
+// Le frontend (applyAmountPaid) réduit déjà invoice_open_amount_inc_vat de amountPaid avant l'envoi.
+// Donc effectiveOpen côté serveur = originalOpen - amountPaid.
+// avoirAmount = effectiveOpen (pas de double soustraction).
+function computeAvoirAmount(effectiveOpen) {
+  return Math.max(0, effectiveOpen);
+}
+
+// Helper pour vérifier le montant envoyé à PAYT en Step 3 (originalOpen = effectiveOpen + amountPaid)
+function computeOriginalOpen(effectiveOpen, amountPaid) {
   const paid = parseFloat(amountPaid) || 0;
-  return Math.max(0, Math.round((effectiveOpen - paid) * 100) / 100);
+  return Math.round((effectiveOpen + paid) * 100) / 100;
 }
 
 suite('Scénario 1 — paiement partiel + Clôturée → payment 400 + avoir 600', () => {
-  const inv = { invoice_open_amount_inc_vat: '1000', amount_paid: '400', payt_status: 'Clôturée' };
-  test('Step 4 : facture dans paidBatch',          isInPaidBatch(inv),                         true);
-  test('Step 5 : facture dans clotureeeBatch',     isInClotureeeBatch(inv),                    true);
-  test('Step 4 : montant paiement = 400',          parseFloat(inv.amount_paid),                400);
-  test('Step 5 : avoirAmount = 600',               computeAvoirAmount(1000, 400),              600);
-  test('Step 5 : pas d\'avoir si avoirAmount = 0', computeAvoirAmount(1000, 1000) === 0,       true);
+  // Frontend envoie invoice_open_amount_inc_vat déjà réduit : 1000 - 400 = 600
+  const inv = { invoice_open_amount_inc_vat: '600', amount_paid: '400', payt_status: 'Clôturée' };
+  const effectiveOpen = parseFloat(inv.invoice_open_amount_inc_vat);
+  const amountPaid    = parseFloat(inv.amount_paid);
+  test('Step 3 : originalOpen envoyé à PAYT = 1000',  computeOriginalOpen(effectiveOpen, amountPaid), 1000);
+  test('Step 4 : facture dans paidBatch',              isInPaidBatch(inv),                            true);
+  test('Step 5 : facture dans clotureeeBatch',         isInClotureeeBatch(inv),                       true);
+  test('Step 4 : montant paiement = 400',              amountPaid,                                    400);
+  test('Step 5 : avoirAmount = 600 (effectiveOpen)',   computeAvoirAmount(effectiveOpen),             600);
+  test('Step 5 : pas d\'avoir si effectiveOpen = 0',  computeAvoirAmount(0) === 0,                   true);
 });
 
 suite('Scénario 2 — Clôturée sans paiement → avoir 1000 seulement', () => {
+  // Pas de paiement → frontend ne réduit pas → effectiveOpen = originalOpen = 1000
   const inv = { invoice_open_amount_inc_vat: '1000', amount_paid: null, payt_status: 'Clôturée' };
-  test('Step 4 : facture hors paidBatch',          isInPaidBatch(inv),                         false);
-  test('Step 5 : facture dans clotureeeBatch',     isInClotureeeBatch(inv),                    true);
-  test('Step 5 : avoirAmount = 1000',              computeAvoirAmount(1000, null),             1000);
-  test('Step 5 : avoir non nul (différent de 0)',  computeAvoirAmount(1000, null) > 0,         true);
+  const effectiveOpen = parseFloat(inv.invoice_open_amount_inc_vat);
+  const amountPaid    = parseFloat(inv.amount_paid) || 0;
+  test('Step 3 : originalOpen envoyé à PAYT = 1000',  computeOriginalOpen(effectiveOpen, amountPaid), 1000);
+  test('Step 4 : facture hors paidBatch',              isInPaidBatch(inv),                            false);
+  test('Step 5 : facture dans clotureeeBatch',         isInClotureeeBatch(inv),                       true);
+  test('Step 5 : avoirAmount = 1000',                  computeAvoirAmount(effectiveOpen),             1000);
+  test('Step 5 : avoir non nul (différent de 0)',      computeAvoirAmount(effectiveOpen) > 0,         true);
 });
 
 suite('Scénario 3 — paiement partiel sans clôture → payment 500 uniquement', () => {
-  const inv = { invoice_open_amount_inc_vat: '1000', amount_paid: '500', payt_status: null };
-  test('Step 4 : facture dans paidBatch',          isInPaidBatch(inv),                         true);
-  test('Step 5 : facture hors clotureeeBatch',     isInClotureeeBatch(inv),                    false);
-  test('Step 4 : montant paiement = 500',          parseFloat(inv.amount_paid),                500);
-  test('Step 5 : pas d\'avoir créé (non clôturée)', isInClotureeeBatch(inv) === false,         true);
+  // Frontend envoie invoice_open_amount_inc_vat déjà réduit : 1000 - 500 = 500
+  const inv = { invoice_open_amount_inc_vat: '500', amount_paid: '500', payt_status: null };
+  const effectiveOpen = parseFloat(inv.invoice_open_amount_inc_vat);
+  const amountPaid    = parseFloat(inv.amount_paid);
+  test('Step 3 : originalOpen envoyé à PAYT = 1000',  computeOriginalOpen(effectiveOpen, amountPaid), 1000);
+  test('Step 4 : facture dans paidBatch',              isInPaidBatch(inv),                            true);
+  test('Step 5 : facture hors clotureeeBatch',         isInClotureeeBatch(inv),                       false);
+  test('Step 4 : montant paiement = 500',              amountPaid,                                    500);
+  test('Step 5 : pas d\'avoir créé (non clôturée)',    isInClotureeeBatch(inv) === false,             true);
 });
 
-suite('computeAvoirAmount — cas limites', () => {
-  test('paiement = 0 → avoir = openAmount',        computeAvoirAmount(1000, 0),                1000);
-  test('paiement = openAmount → avoir = 0',        computeAvoirAmount(1000, 1000),             0);
-  test('paiement > openAmount → avoir = 0 (pas négatif)', computeAvoirAmount(1000, 1200),      0);
-  test('montant décimal : 1000 - 333.33 = 666.67', computeAvoirAmount(1000, 333.33),           666.67);
-  test('null treated as 0 → avoir = openAmount',   computeAvoirAmount(500, null),              500);
+suite('computeAvoirAmount — cas limites (effectiveOpen déjà réduit par le frontend)', () => {
+  test('effectiveOpen = 1000, paid=0 → avoir = 1000',     computeAvoirAmount(1000),    1000);
+  test('effectiveOpen = 0 (payée intégralement) → avoir=0', computeAvoirAmount(0),       0);
+  test('effectiveOpen = 666.67 → avoir = 666.67',          computeAvoirAmount(666.67),  666.67);
+  test('effectiveOpen négatif → avoir = 0 (pas négatif)', computeAvoirAmount(-5),        0);
 });
 
 suite('Auto-toggle statut Payée quand amountPaid = montant en suspens', () => {

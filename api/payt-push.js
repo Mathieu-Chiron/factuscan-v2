@@ -161,7 +161,11 @@ export default async function handler(req, res) {
     const payload = {
       administration_id: administrationId,
       invoices: batch.map(inv => {
+        // effectiveOpen is already reduced by amountPaid by the frontend (applyAmountPaid).
+        // PAYT must receive the original open amount (before any payment), so we add it back.
         const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
+        const amountPaid    = parseFloat(inv.amount_paid) || 0;
+        const originalOpen  = Math.round((effectiveOpen + amountPaid) * 100) / 100;
         return {
           debtor_number:     inv.debtor_number,
           invoice_number:    inv.invoice_number,
@@ -169,8 +173,8 @@ export default async function handler(req, res) {
           due_date:          inv.invoice_due_date,
           book_amount_total: String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
           amount_total:      String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
-          book_amount_open:  String(effectiveOpen),
-          amount_open:       String(effectiveOpen),
+          book_amount_open:  String(originalOpen),
+          amount_open:       String(originalOpen),
           currency_code:     inv.currency_code || 'EUR',
         };
       }),
@@ -259,10 +263,11 @@ export default async function handler(req, res) {
         console.log(`[payt-push ${ts()}] cloturee batch size: ${clotureeeBatch.length}`);
 
         for (const inv of clotureeeBatch) {
+          // effectiveOpen is already reduced by amountPaid by the frontend (applyAmountPaid).
+          // It represents the remaining balance after any partial payment — exactly the avoir amount.
           const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
           const amountPaid    = parseFloat(inv.amount_paid) || 0;
-          // Montant de l'avoir = solde restant après déduction du paiement partiel éventuel
-          const avoirAmount   = Math.max(0, Math.round((effectiveOpen - amountPaid) * 100) / 100);
+          const avoirAmount   = effectiveOpen; // = originalOpen - amountPaid (reduced by frontend)
           if (avoirAmount === 0) {
             console.log(`[payt-push ${ts()}] ${inv.invoice_number} — solde restant=0, pas d'avoir nécessaire`);
             continue;
