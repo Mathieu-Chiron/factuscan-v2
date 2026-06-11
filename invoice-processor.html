@@ -843,6 +843,18 @@ function renderDebtorCode(inv){
 function renderFieldsUI(inv) {
   const c=document.getElementById('fieldsContent');c.innerHTML='';
 
+  // Bannière de verrouillage si la facture a été envoyée avec succès + statut déclaré
+  if(isInvLocked(inv)){
+    const isCloturee=inv.paytStatus==='Clôturée';
+    const banner=document.createElement('div');
+    banner.style.cssText='display:flex;align-items:center;gap:8px;padding:10px 14px;margin-bottom:12px;border-radius:var(--radius);font-size:12px;'+(isCloturee?'background:rgba(217,31,44,0.06);border:1px solid rgba(217,31,44,0.20);color:var(--red);':'background:rgba(50,192,130,0.10);border:1px solid rgba(50,192,130,0.30);color:#085041;');
+    banner.innerHTML=`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`+
+      `<span>Facture <strong>${isCloturee?'clôturée':'payée'}</strong> — envoyée sur PAYT avec succès. Modification impossible.</span>`;
+    c.appendChild(banner);
+  }
+
+  const locked=isInvLocked(inv);
+
   const GROUP_DEBTOR=['debtor_lastname','debtor_post_street_1','debtor_post_postalcode','debtor_post_city','debtor_post_country_code','debtor_email'];
   const GROUP_INVOICE=['invoice_number','invoice_date','invoice_due_date','invoice_total_amount_inc_vat','invoice_open_amount_inc_vat'];
 
@@ -865,6 +877,7 @@ function renderFieldsUI(inv) {
       ${isCountry?`<div class="country-wrap">
         <input class="${inputClass}" type="text" id="fi_${f.key}" value="${esc(displayVal)}"
           placeholder="FR" autocomplete="off"
+          ${locked?'disabled':''}
           oninput="onCountryInput(this);onFI('${f.key}',this.value)"
           onfocus="onCountryInput(this)"
           onblur="setTimeout(closeCountryDrop,150)"
@@ -874,6 +887,7 @@ function renderFieldsUI(inv) {
         type="${f.type==='number'?'number':f.type==='date'?'date':f.type==='email'?'email':'text'}"
         id="fi_${f.key}" value="${esc(val)}"
         placeholder="${f.required?'Requis':'Optionnel'}"
+        ${locked?'disabled':''}
         oninput="onFI('${f.key}',this.value)"
       />`}
       ${err?`<div class="field-err" style="color:var(--amber-text);">${esc(err)}</div>`:''}
@@ -891,6 +905,7 @@ function renderFieldsUI(inv) {
       <input type="number" min="0" step="0.01" class="field-input" id="fi_amount_paid"
         value="${inv.amountPaid!=null?inv.amountPaid:''}" placeholder="0.00"
         style="text-align:right;"
+        ${locked?'disabled':''}
         onchange="inv_setAmountPaid(this.value)" oninput="inv_setAmountPaid(this.value)"/>
       <span style="font-size:13px;color:var(--muted);">€</span>
     </div>`;
@@ -898,24 +913,32 @@ function renderFieldsUI(inv) {
 
   // ── Entreprise cible ──
   const cur=inv.targetCompany;
-  const opts=paytAdministrations.map(a=>
-    `<div class="csel-opt${cur&&cur.id===a.id?' selected':''}" data-name="${esc(a.name)}"
-      onclick="pickCsel(event,${S.cur},'${a.id}','${a.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');renderFieldsUI(S.invoices[S.cur])">
-      ${esc(a.name)}${a.city?` <span style="color:var(--muted);font-size:11px;">— ${esc(a.city)}</span>`:''}</div>`
-  ).join('');
-  const noData=paytAdministrations.length===0
-    ?`<div style="font-size:12px;color:var(--muted);padding:6px 8px;">Aucune entreprise disponible</div>`:'';
   const compRow=document.createElement('div');compRow.className='field-row';
-  compRow.innerHTML=`<div class="field-lbl">Entreprise cible</div>
-    <div class="csel">
-      <div class="csel-val${cur?'':' placeholder'}" onclick="openCsel(event,this)">
-        ${cur?esc(cur.name):'Choisir…'}
-      </div>
-      <div class="csel-panel">
-        <input class="csel-search" placeholder="Rechercher…" oninput="filterCsel(this)">
-        <div class="csel-list">${noData}${opts}</div>
-      </div>
-    </div>`;
+  if(locked || inv.pushStatus==='success'){
+    compRow.innerHTML=`<div class="field-lbl">Entreprise cible</div>
+      <div style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--navy);">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        ${cur?esc(cur.name):'—'}
+      </div>`;
+  } else {
+    const opts=paytAdministrations.map(a=>
+      `<div class="csel-opt${cur&&cur.id===a.id?' selected':''}" data-name="${esc(a.name)}"
+        onclick="pickCsel(event,${S.cur},'${a.id}','${a.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');renderFieldsUI(S.invoices[S.cur])">
+        ${esc(a.name)}${a.city?` <span style="color:var(--muted);font-size:11px;">— ${esc(a.city)}</span>`:''}</div>`
+    ).join('');
+    const noData=paytAdministrations.length===0
+      ?`<div style="font-size:12px;color:var(--muted);padding:6px 8px;">Aucune entreprise disponible</div>`:'';
+    compRow.innerHTML=`<div class="field-lbl">Entreprise cible</div>
+      <div class="csel">
+        <div class="csel-val${cur?'':' placeholder'}" onclick="openCsel(event,this)">
+          ${cur?esc(cur.name):'Choisir…'}
+        </div>
+        <div class="csel-panel">
+          <input class="csel-search" placeholder="Rechercher…" oninput="filterCsel(this)">
+          <div class="csel-list">${noData}${opts}</div>
+        </div>
+      </div>`;
+  }
   groupInvoice.appendChild(compRow);
 
   c.appendChild(groupDebtor);
@@ -1302,6 +1325,14 @@ function sortExpRows(rows){
   });
 }
 
+// Une facture est verrouillée une fois qu'elle a été envoyée avec succès sur PAYT
+// ET que son statut a été enregistré comme Clôturée ou Payée.
+// Tant que ce n'est pas le cas, elle reste éditable (l'utilisateur peut ajuster
+// le montant payé ou le statut et renvoyer).
+function isInvLocked(inv){
+  return inv.pushStatus === 'success' && (inv.paytStatus === 'Clôturée' || inv.paytStatus === 'Payée');
+}
+
 function renderExpTable(){
   const thead=document.querySelector('#expTable thead'),tbody=document.querySelector('#expTable tbody');
   const allRows=getExpRows();
@@ -1367,6 +1398,10 @@ function renderExpTable(){
       }
       if(col.key==='_amount_paid'){
         const v=row._inv.amountPaid??'';
+        if(isInvLocked(inv)){
+          return `<td style="min-width:110px;text-align:right;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;">`+
+            `${v!==''?`${esc(String(v))} €`:'—'}</td>`;
+        }
         return `<td style="min-width:110px;"><div style="display:flex;align-items:center;gap:4px;">`+
           `<input type="number" min="0" step="0.01" value="${esc(String(v))}" placeholder="0.00" `+
           `style="width:80px;padding:4px 6px;border:1px solid var(--faint-border-strong);border-radius:var(--radius);font-size:12px;font-family:var(--font);text-align:right;" `+
@@ -1374,6 +1409,17 @@ function renderExpTable(){
           `<span style="font-size:12px;color:var(--muted);">€</span></div></td>`;
       }
       if(col.type==='select'&&col.key==='_payt_status'){
+        if(isInvLocked(inv)){
+          const isCloturee=inv.paytStatus==='Clôturée';
+          const lockColor=isCloturee?'var(--red)':'#085041';
+          const lockBg=isCloturee?'rgba(217,31,44,0.06)':'rgba(50,192,130,0.12)';
+          const lockBorder=isCloturee?'rgba(217,31,44,0.25)':'rgba(50,192,130,0.30)';
+          const lockIcon=isCloturee
+            ?`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
+            :`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+          return `<td style="min-width:112px;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:${lockColor};background:${lockBg};border:1px solid ${lockBorder};border-radius:var(--radius);padding:3px 8px;white-space:nowrap;">`+
+            `${lockIcon}${esc(inv.paytStatus)}</span></td>`;
+        }
         const openAmt=parseFloat(inv.data.invoice_open_amount_inc_vat);
         if(openAmt===0||inv.paytStatus==='Payée'){
           return `<td style="min-width:112px;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#085041;background:rgba(50,192,130,0.12);border:1px solid rgba(50,192,130,0.30);border-radius:var(--radius);padding:3px 8px;white-space:nowrap;">`+
@@ -1439,7 +1485,10 @@ function updateSelCount(){
 }
 function bulkSetStatus(value){
   if(!selectedInvoices.size){alert('Sélectionnez au moins une facture.');return;}
-  selectedInvoices.forEach(i=>{if(S.invoices[i]) S.invoices[i].paytStatus=value;});
+  selectedInvoices.forEach(i=>{
+    const inv=S.invoices[i];
+    if(inv && !isInvLocked(inv)) inv.paytStatus=value;
+  });
   saveDataset();
   renderExpTable();
 }
@@ -1547,7 +1596,7 @@ async function pushToPayt(){
   if(!token){alert('Token PAYT manquant. Reconnectez-vous via /payt-connect.html');return;}
 
   const toSend=S.invoices.filter(inv=>
-    inv.status==='validated' && inv.targetCompany
+    inv.status==='validated' && inv.targetCompany && !isInvLocked(inv)
   );
   if(!toSend.length){
     alert('Aucune facture validée avec une entreprise cible à envoyer.');return;
