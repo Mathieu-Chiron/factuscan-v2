@@ -1420,11 +1420,6 @@ function renderExpTable(){
           return `<td style="min-width:112px;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:${lockColor};background:${lockBg};border:1px solid ${lockBorder};border-radius:var(--radius);padding:3px 8px;white-space:nowrap;">`+
             `${lockIcon}${esc(inv.paytStatus)}</span></td>`;
         }
-        const openAmt=parseFloat(inv.data.invoice_open_amount_inc_vat);
-        if(openAmt===0||inv.paytStatus==='Payée'){
-          return `<td style="min-width:112px;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#085041;background:rgba(50,192,130,0.12);border:1px solid rgba(50,192,130,0.30);border-radius:var(--radius);padding:3px 8px;white-space:nowrap;">`+
-            `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Payée</span></td>`;
-        }
         return renderCselSimple(invIdx,col,row[col.key]);
       }
       if(col.type==='select'&&col.key!=='_target_company') return renderCselSimple(invIdx,col,row[col.key]);
