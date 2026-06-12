@@ -1,6 +1,8 @@
 {
   "rewrites": [
     { "source": "/", "destination": "/invoice-processor.html" },
+    { "source": "/invoice-processor", "destination": "/invoice-processor.html" },
+    { "source": "/invoices", "destination": "/invoice-processor.html" },
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/((?!api/).*)", "destination": "/invoice-processor.html" }
   ],

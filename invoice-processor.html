@@ -809,6 +809,7 @@ async function handleFiles(list) {
     document.getElementById('screen-upload').classList.add('out');
     await new Promise(r=>setTimeout(r,280));
     document.getElementById('screen-upload').style.display='none';
+    history.pushState({screen:'editor'},document.title,'/invoice-processor');
     document.getElementById('screen-main').classList.add('in');
   }
 
@@ -1658,47 +1659,53 @@ document.addEventListener('click',()=>{
   if(_openCselPanel){_openCselPanel.style.display='none';_openCselPanel=null;}
 });
 
-function showExport(){
-  // Si déjà sur Mes factures avec 0 factures → retour à l'écran upload
-  if(document.getElementById('screen-export').classList.contains('show')&&!S.invoices.length){
+/* ══ ROUTING (History API) ════════════════════════════ */
+function _showScreen(name){
+  if(name==='invoices'){
+    const cloturees=S.invoices.filter(i=>i.paytStatus==='Clôturée').length;
+    const ouvertes=S.invoices.filter(i=>i.status==='validated'&&i.paytStatus!=='Clôturée'&&i.paytStatus!=='Payée').length;
+    const validees=S.invoices.filter(i=>i.status==='validated').length;
+    document.getElementById('expStats').innerHTML=`<span style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--navy);padding:10px 16px;background:var(--faint);border-radius:var(--radius-lg);margin-bottom:1.75rem;">
+      <span style="font-weight:600;color:var(--muted);">${S.invoices.length} factures enregistrées</span>
+      <span style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><strong>${validees}</strong> validées</span>
+      <span style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg><strong>${cloturees}</strong> clôturées</span>
+      <span style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E07B00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M13 21V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v16"/><path d="M19 21V9a1 1 0 0 0-1-1h-5"/><path d="M9 11v.01"/></svg><strong>${ouvertes}</strong> ouvertes</span>
+    </span>`;
+    expSort={key:null,dir:'asc'};
+    selectedInvoices.clear();
+    updateSelCount();
+    renderExpTable();
+    document.getElementById('screen-export').classList.add('show');
+  } else if(name==='editor'){
+    document.getElementById('screen-export').classList.remove('show');
+    document.getElementById('screen-main').classList.add('in');
+    renderSidebar();updateBar();
+    const curOk=S.cur>=0&&S.invoices[S.cur]&&sbEditable(S.invoices[S.cur]);
+    if(curOk) selectInv(S.cur);
+    else{const fi=S.invoices.findIndex(sbEditable);if(fi>=0) selectInv(fi);}
+  } else {
     document.getElementById('screen-export').classList.remove('show');
     document.getElementById('screen-main').classList.remove('in');
     const su=document.getElementById('screen-upload');
-    su.style.display=''; setTimeout(()=>su.classList.remove('out'),10);
+    su.style.display='';setTimeout(()=>su.classList.remove('out'),10);
+  }
+}
+function navigate(path,screen){
+  history.pushState({screen},document.title,path);
+  _showScreen(screen);
+}
+window.addEventListener('popstate',e=>{_showScreen(e.state?.screen||'upload');});
+
+function showExport(){
+  // Si déjà sur Mes factures avec 0 factures → retour à l'écran upload
+  if(document.getElementById('screen-export').classList.contains('show')&&!S.invoices.length){
+    navigate('/','upload');
     return;
   }
-  const cloturees=S.invoices.filter(i=>i.paytStatus==='Clôturée').length;
-  const ouvertes=S.invoices.filter(i=>i.status==='validated'&&i.paytStatus!=='Clôturée'&&i.paytStatus!=='Payée').length;
-  const validees=S.invoices.filter(i=>i.status==='validated').length;
-  document.getElementById('expStats').innerHTML=`<span style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--navy);padding:10px 16px;background:var(--faint);border-radius:var(--radius-lg);margin-bottom:1.75rem;">
-    <span style="font-weight:600;color:var(--muted);">${S.invoices.length} factures enregistrées</span>
-    <span style="display:flex;align-items:center;gap:6px;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-      <strong>${validees}</strong> validées
-    </span>
-    <span style="display:flex;align-items:center;gap:6px;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-      <strong>${cloturees}</strong> clôturées
-    </span>
-    <span style="display:flex;align-items:center;gap:6px;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E07B00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M13 21V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v16"/><path d="M19 21V9a1 1 0 0 0-1-1h-5"/><path d="M9 11v.01"/></svg>
-      <strong>${ouvertes}</strong> ouvertes
-    </span>
-  </span>`;
-  expSort={key:null,dir:'asc'};
-  selectedInvoices.clear();
-  updateSelCount();
-  renderExpTable();
-  document.getElementById('screen-export').classList.add('show');
+  navigate('/invoices','invoices');
 }
 function hideExport(){
-  document.getElementById('screen-export').classList.remove('show');
-  document.getElementById('screen-main').classList.add('in');
-  renderSidebar(); updateBar();
-  // Land on an editable invoice (non-locked); prefer current selection if editable
-  const curOk = S.cur>=0 && S.invoices[S.cur] && sbEditable(S.invoices[S.cur]);
-  if(curOk) selectInv(S.cur);
-  else { const fi=S.invoices.findIndex(sbEditable); if(fi>=0) selectInv(fi); }
+  navigate('/invoice-processor','editor');
 }
 
 /* ══ PUSH TO PAYT ════════════════════════════════════ */
@@ -1893,10 +1900,7 @@ function confirmRestart(){
 function closeRestartWarn(){document.getElementById('restartWarnBg').classList.remove('show');}
 function goToUpload(){
   closeRestartWarn();
-  document.getElementById('screen-export').classList.remove('show');
-  document.getElementById('screen-main').classList.remove('in');
-  document.getElementById('screen-upload').style.display='';
-  setTimeout(()=>document.getElementById('screen-upload').classList.remove('out'),10);
+  navigate('/','upload');
 }
 
 /* ══ MODAL ═══════════════════════════════════════════ */
@@ -2043,10 +2047,7 @@ function closeClearSession(){document.getElementById('clearSessionBg').classList
 function clearSession(){
   closeClearSession();
   S.invoices=[];S.cur=-1;S.busy=false;S.zipDownloaded=false;
-  document.getElementById('screen-export').classList.remove('show');
-  document.getElementById('screen-main').classList.remove('in');
-  const su=document.getElementById('screen-upload');
-  su.style.display='flex';su.classList.remove('out');
+  navigate('/','upload');
   updateSessionBanner();updateBar();
 }
 
@@ -2161,6 +2162,7 @@ function restoreDataset(){
     document.getElementById('screen-upload').classList.add('out');
     setTimeout(()=>{
       document.getElementById('screen-upload').style.display='none';
+      history.pushState({screen:'editor'},document.title,'/invoice-processor');
       document.getElementById('screen-main').classList.add('in');
       renderSidebar();selectInv(0);updateBar();
     },280);
@@ -2192,7 +2194,7 @@ async function autoRestore(){
     });
     // Aller directement à l'écran export
     document.getElementById('screen-upload').style.display='none';
-    showExport();
+    navigate('/invoices','invoices');
     updateSessionBanner();
   }catch(e){}
 }
@@ -2200,8 +2202,8 @@ initClerk();
 if(sessionStorage.getItem('adminAuth')==='1'){
   document.getElementById('btnSettings').style.display='';
 }
-console.log('%cFactuScan — version 75','color:#55D6DE;font-weight:700;font-size:13px;');
+console.log('%cFactuScan — version 76','color:#55D6DE;font-weight:700;font-size:13px;');
 </script>
-<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 75</div>
+<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 76</div>
 </body>
 </html>
