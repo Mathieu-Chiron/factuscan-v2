@@ -23,13 +23,22 @@
 //   }]
 // }
 
+import { ProxyAgent } from 'undici';
+
 const PAYT_BASE = process.env.PAYT_PROXY_URL || 'https://api.paytsoftware.com/api';
 const PROXY_SECRET = process.env.PROXY_SECRET;
 const ts = () => new Date().toISOString().replace('T',' ').slice(0,19);
 
+// Route outbound PAYT calls through Fixie (static IP) when FIXIE_URL is set.
+// FIXIE_URL format: http://fixie:TOKEN@velodrome.usefixie.com:80
+const _fixieAgent = process.env.FIXIE_URL ? new ProxyAgent(process.env.FIXIE_URL) : null;
+function _fetch(url, opts) {
+  return fetch(url, _fixieAgent ? { ...opts, dispatcher: _fixieAgent } : opts);
+}
+
 async function fetchWithRetry(url, opts, maxRetries = 3) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const r = await fetch(url, opts);
+    const r = await _fetch(url, opts);
     if (r.status !== 429) return r;
     const retryAfter = parseInt(r.headers.get('retry-after') || '2', 10);
     const wait = (retryAfter || 2) * 1000 * Math.pow(2, attempt);

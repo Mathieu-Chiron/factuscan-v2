@@ -8,8 +8,16 @@
 //  - It is forwarded to PAYT in the Authorization header and never logged
 //    or persisted server-side.
 
+import { ProxyAgent } from 'undici';
+
 const PAYT_BASE = process.env.PAYT_PROXY_URL || 'https://api.paytsoftware.com/api';
 const PROXY_SECRET = process.env.PROXY_SECRET;
+
+// Route outbound PAYT calls through Fixie (static IP) when FIXIE_URL is set.
+const _fixieAgent = process.env.FIXIE_URL ? new ProxyAgent(process.env.FIXIE_URL) : null;
+function _fetch(url, opts) {
+  return fetch(url, _fixieAgent ? { ...opts, dispatcher: _fixieAgent } : opts);
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -37,7 +45,7 @@ export default async function handler(req, res) {
       url.searchParams.set('per_page', String(PER_PAGE));
       if (cursor) url.searchParams.set('cursor', cursor);
 
-      const r = await fetch(url.toString(), {
+      const r = await _fetch(url.toString(), {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${token}`,
