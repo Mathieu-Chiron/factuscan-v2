@@ -1579,12 +1579,24 @@ document.addEventListener('click',()=>{
 });
 
 function showExport(){
-  const val=S.invoices.filter(i=>i.status==='validated');
-  const skip=S.invoices.filter(i=>i.status==='skipped');
-  document.getElementById('expStats').innerHTML=`
-    <div class="exp-stat"><div class="exp-stat-n">${S.invoices.length}</div><div class="exp-stat-l">Total</div></div>
-    <div class="exp-stat"><div class="exp-stat-n" style="color:var(--teal-text);">${val.length}</div><div class="exp-stat-l">Validées</div></div>
-    <div class="exp-stat"><div class="exp-stat-n" style="color:var(--amber-text);">${skip.length}</div><div class="exp-stat-l">Ignorées</div></div>`;
+  const cloturees=S.invoices.filter(i=>i.paytStatus==='Clôturée').length;
+  const ouvertes=S.invoices.filter(i=>i.status==='validated'&&i.paytStatus!=='Clôturée'&&i.paytStatus!=='Payée').length;
+  const validees=S.invoices.filter(i=>i.status==='validated').length;
+  document.getElementById('expStats').innerHTML=`<span style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--navy);padding:10px 16px;background:var(--faint);border-radius:var(--radius-lg);margin-bottom:1.75rem;">
+    <span style="font-weight:600;color:var(--muted);">${S.invoices.length} factures enregistrées</span>
+    <span style="display:flex;align-items:center;gap:6px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+      <strong>${validees}</strong> validées
+    </span>
+    <span style="display:flex;align-items:center;gap:6px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      <strong>${cloturees}</strong> clôturées
+    </span>
+    <span style="display:flex;align-items:center;gap:6px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E07B00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M13 21V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v16"/><path d="M19 21V9a1 1 0 0 0-1-1h-5"/><path d="M9 11v.01"/></svg>
+      <strong>${ouvertes}</strong> ouvertes
+    </span>
+  </span>`;
   expSort={key:null,dir:'asc'};
   selectedInvoices.clear();
   updateSelCount();
