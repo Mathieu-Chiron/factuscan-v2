@@ -729,11 +729,13 @@ async function initClerk() {
       const s = document.createElement('script');
       s.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js';
       s.crossOrigin = 'anonymous';
+      s.dataset.clerkPublishableKey = clerkPublishableKey;
       s.onload = resolve; s.onerror = reject;
       document.head.appendChild(s);
     });
 
-    _clerkInst = new window.Clerk(clerkPublishableKey);
+    // CDN bundle auto-initializes window.Clerk as an instance (not a class)
+    _clerkInst = window.Clerk;
     await _clerkInst.load();
 
     if (_clerkInst.user) {
