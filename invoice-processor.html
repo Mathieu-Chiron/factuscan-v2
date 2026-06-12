@@ -21,6 +21,13 @@
 }
 html,body{overflow:hidden;}
 
+/* AUTH */
+#screen-auth{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);z-index:200;}
+#screen-auth.hidden{display:none;}
+.auth-logo{font-size:24px;font-weight:700;color:var(--navy);margin-bottom:6px;letter-spacing:-.5px;}
+.auth-sub{font-size:14px;color:var(--muted);margin-bottom:2rem;}
+#clerk-sign-in{width:min(400px,92vw);}
+
 /* UPLOAD */
 #screen-upload{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:transparent;transition:opacity .25s;}
 #screen-upload.out{opacity:0;pointer-events:none;}
@@ -246,6 +253,13 @@ html,body{overflow:hidden;}
 <div class="blob blob-2"></div>
 <div class="blob blob-3"></div>
 
+<!-- ═══ AUTH ══════════════════════════════════════ -->
+<div id="screen-auth">
+  <div class="auth-logo">FactuScan</div>
+  <div class="auth-sub">Connectez-vous pour accéder à vos factures</div>
+  <div id="clerk-sign-in"></div>
+</div>
+
 <!-- ═══ UPLOAD ════════════════════════════════════ -->
 <div id="screen-upload" class="z-content">
   <div style="position:fixed;top:16px;right:20px;">
@@ -290,6 +304,7 @@ html,body{overflow:hidden;}
       <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
       <button class="btn btn-neutral btn-sm" id="btnExport" onclick="showExport()" style="display:none;">Exporter</button>
       <button class="btn btn-primary btn-sm" id="btnExtract" onclick="startExtraction()" disabled>Extraire les données</button>
+      <button class="btn btn-ghost btn-sm" onclick="signOut()" title="Se déconnecter" style="opacity:.6;">↩</button>
     </div>
   </div>
 
@@ -691,12 +706,56 @@ const S = {
   invoices:[], cur:-1, busy:false, zipDownloaded:false,
 };
 
-/* ══ USER ID (persistent across sessions) ════════════ */
-const USER_ID = localStorage.getItem('factuscan_user_id') || (()=>{
-  const id='user_'+Math.random().toString(36).slice(2)+Date.now().toString(36);
-  localStorage.setItem('factuscan_user_id',id);
-  return id;
-})();
+/* ══ AUTH (Clerk) ════════════════════════════════════ */
+let USER_ID = null;
+let _clerkInst = null;
+
+async function getAuthToken() {
+  try { return (await _clerkInst?.session?.getToken()) || null; } catch { return null; }
+}
+
+async function signOut() {
+  localStorage.removeItem('factuscan_dataset');
+  await _clerkInst?.signOut();
+  location.reload();
+}
+
+async function initClerk() {
+  try {
+    const { clerkPublishableKey } = await fetch('/api/config').then(r => r.json());
+    if (!clerkPublishableKey) { console.error('Clerk publishable key manquante'); return; }
+
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js';
+      s.crossOrigin = 'anonymous';
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+
+    _clerkInst = new window.Clerk(clerkPublishableKey);
+    await _clerkInst.load();
+
+    if (_clerkInst.user) {
+      USER_ID = _clerkInst.user.id;
+      document.getElementById('screen-auth').classList.add('hidden');
+      await autoRestore();
+    } else {
+      _clerkInst.mountSignIn(document.getElementById('clerk-sign-in'), {
+        appearance: { variables: { colorPrimary: '#55D6DE' } },
+      });
+      _clerkInst.addListener(({ user }) => {
+        if (user && !USER_ID) {
+          USER_ID = user.id;
+          document.getElementById('screen-auth').classList.add('hidden');
+          autoRestore();
+        }
+      });
+    }
+  } catch(e) {
+    console.error('Clerk init error:', e);
+  }
+}
 
 /* ══ UPLOAD ══════════════════════════════════════════ */
 function onDragOver(e){e.preventDefault();document.getElementById('dropzone').classList.add('over');}
@@ -2007,9 +2066,12 @@ function saveDataset(){
 
 async function saveToDb(snap){
   try{
+    if(!USER_ID) return;
+    const token = await getAuthToken();
     await fetch('/api/db-save',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({session_id:USER_ID,invoices:snap||[]}),
+      method:'POST',
+      headers:{'Content-Type':'application/json',...(token&&{Authorization:`Bearer ${token}`})},
+      body:JSON.stringify({invoices:snap||[]}),
     });
   }catch(e){}
 }
@@ -2033,13 +2095,14 @@ function restoreDataset(){
     },280);
   }catch(e){}
 }
-(async function autoRestore(){
+async function autoRestore(){
   try{
     // Priorité 1 : localStorage (immédiat)
     let snap=JSON.parse(localStorage.getItem('factuscan_dataset')||'[]');
     // Priorité 2 : DB si localStorage vide
     if(!snap.length){
-      const r=await fetch('/api/db-load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:USER_ID})});
+      const token = await getAuthToken();
+      const r=await fetch('/api/db-load',{method:'POST',headers:{'Content-Type':'application/json',...(token&&{Authorization:`Bearer ${token}`})},body:JSON.stringify({})});
       if(r.ok){
         const {invoices}=await r.json().catch(()=>({}));
         if(invoices?.length){
@@ -2061,12 +2124,13 @@ function restoreDataset(){
     showExport();
     updateSessionBanner();
   }catch(e){}
-})();
+}
+initClerk();
 if(sessionStorage.getItem('adminAuth')==='1'){
   document.getElementById('btnSettings').style.display='';
 }
-console.log('%cFactuScan — version 72','color:#55D6DE;font-weight:700;font-size:13px;');
+console.log('%cFactuScan — version 73','color:#55D6DE;font-weight:700;font-size:13px;');
 </script>
-<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 72</div>
+<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 73</div>
 </body>
 </html>
