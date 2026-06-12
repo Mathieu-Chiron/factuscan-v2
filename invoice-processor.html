@@ -726,8 +726,8 @@ async function handleFiles(list) {
   if (!toUpload.length) return;
 
   renderSidebar(); updateBar();
-  if (S.cur===-1 || S.invoices[S.cur]?.fromRestore) {
-    const fi=S.invoices.findIndex(i=>!i.fromRestore); if(fi>=0) selectInv(fi);
+  if (S.cur===-1 || !sbEditable(S.invoices[S.cur])) {
+    const fi=S.invoices.findIndex(sbEditable); if(fi>=0) selectInv(fi);
   }
 
   if (needsTransition) {
@@ -755,15 +755,20 @@ async function handleFiles(list) {
 }
 
 /* ══ SIDEBAR ═════════════════════════════════════════ */
+// Une facture est visible dans la sidebar (éditable) si elle n'est PAS verrouillée.
+// Les factures restaurées (fromRestore) restent éditables tant qu'elles n'ont pas été
+// envoyées ET clôturées/payées — seules les factures verrouillées sont export-only.
+function sbEditable(inv){ return !(inv.fromRestore && isInvLocked(inv)); }
+
 function renderSidebar() {
   const l=document.getElementById('sbList');l.innerHTML='';
   const il=document.getElementById('sbIgnList');il.innerHTML='';
-  const newInvs=S.invoices.filter(inv=>!inv.fromRestore);
-  const active=newInvs.filter(inv=>inv.status!=='skipped');
-  const skipped=newInvs.filter(inv=>inv.status==='skipped');
+  const editable=S.invoices.filter(sbEditable);
+  const active=editable.filter(inv=>inv.status!=='skipped');
+  const skipped=editable.filter(inv=>inv.status==='skipped');
   document.getElementById('sbCount').textContent=`(${active.length})`;
   S.invoices.forEach((inv,i)=>{
-    if(inv.fromRestore) return; // factures déjà sauvegardées, visibles uniquement dans l'export
+    if(!sbEditable(inv)) return; // verrouillée + restaurée → export uniquement
     if(inv.status==='skipped') return; // rendered in ignored section
     const el=document.createElement('div');
     const isVal=inv.status==='validated';
@@ -780,7 +785,7 @@ function renderSidebar() {
     sec.classList.add('has-items');
     document.getElementById('sbIgnCount').textContent=`(${skipped.length})`;
     S.invoices.forEach((inv,i)=>{
-      if(inv.fromRestore||inv.status!=='skipped') return;
+      if(!sbEditable(inv)||inv.status!=='skipped') return;
       const el=document.createElement('div');
       el.className='sb-ign-item'+(i===S.cur?' active':'');
       el.innerHTML=`<div class="inv-dot s-skipped"></div><span class="sb-ign-name" title="${esc(inv.fileName)}">${esc(shortName(inv.fileName))}</span>`;
@@ -1607,10 +1612,10 @@ function hideExport(){
   document.getElementById('screen-export').classList.remove('show');
   document.getElementById('screen-main').classList.add('in');
   renderSidebar(); updateBar();
-  // Land on a session invoice (non-restored); only fall back to S.cur if it is one
-  const curOk = S.cur>=0 && S.invoices[S.cur] && !S.invoices[S.cur].fromRestore;
+  // Land on an editable invoice (non-locked); prefer current selection if editable
+  const curOk = S.cur>=0 && S.invoices[S.cur] && sbEditable(S.invoices[S.cur]);
   if(curOk) selectInv(S.cur);
-  else { const fi=S.invoices.findIndex(i=>!i.fromRestore); if(fi>=0) selectInv(fi); }
+  else { const fi=S.invoices.findIndex(sbEditable); if(fi>=0) selectInv(fi); }
 }
 
 /* ══ PUSH TO PAYT ════════════════════════════════════ */
