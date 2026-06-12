@@ -429,6 +429,21 @@ html,body{overflow:hidden;}
       <button class="btn btn-neutral" onclick="confirmRestart()">Nouvelle session</button>
     </div>
     <div class="push-summary" id="pushSummary"></div>
+
+    <!-- ── Toutes les factures PAYT ── -->
+    <div style="margin-top:2.5rem;border-top:.5px solid var(--faint-border);padding-top:2rem;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div class="exp-title" style="font-size:18px;">Toutes mes factures PAYT</div>
+          <div class="exp-sub" style="margin-bottom:0;">Factures chargées directement depuis votre compte PAYT.</div>
+        </div>
+        <button class="btn btn-neutral btn-sm" onclick="loadPaytInvoices()">↻ Actualiser</button>
+      </div>
+      <div id="paytInvStatus" style="font-size:13px;color:var(--muted);margin-bottom:10px;display:none;"></div>
+      <div class="exp-table-wrap" id="paytInvWrap" style="display:none;">
+        <table class="exp-table" id="paytInvTable"><thead></thead><tbody></tbody></table>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1676,6 +1691,7 @@ function _showScreen(name){
     updateSelCount();
     renderExpTable();
     document.getElementById('screen-export').classList.add('show');
+    loadPaytInvoices();
   } else if(name==='editor'){
     document.getElementById('screen-export').classList.remove('show');
     document.getElementById('screen-main').classList.add('in');
@@ -1894,6 +1910,70 @@ async function downloadAll(){
   S.zipDownloaded=true;
 }
 function dlBlob(b,n){const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+
+/* ══ PAYT INVOICE LIST ═══════════════════════════════ */
+const PAYT_INV_COLS=[
+  {label:'N° facture',  key:'invoice_number'},
+  {label:'Débiteur',    key:'_debtor'},
+  {label:'Émission',    key:'invoice_date',  type:'date'},
+  {label:'Échéance',    key:'due_date',      type:'date'},
+  {label:'Montant TTC', key:'_amount_total', type:'number'},
+  {label:'Ouvert',      key:'_amount_open',  type:'number'},
+  {label:'Entreprise',  key:'_admin_name'},
+  {label:'Statut',      key:'status'},
+];
+
+async function loadPaytInvoices(){
+  const token=localStorage.getItem('paytToken');
+  if(!token) return;
+  const statusEl=document.getElementById('paytInvStatus');
+  const wrapEl=document.getElementById('paytInvWrap');
+  statusEl.textContent='Chargement…';statusEl.style.display='';
+  wrapEl.style.display='none';
+  try{
+    const adminIds=paytAdministrations.map(a=>a.id);
+    const res=await fetch('/api/payt-invoices-get',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token,administration_ids:adminIds.length?adminIds:undefined}),
+    });
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.message||`HTTP ${res.status}`);}
+    const {invoices=[]}=await res.json().catch(()=>({}));
+    statusEl.textContent=`${invoices.length} facture${invoices.length!==1?'s':''} trouvée${invoices.length!==1?'s':''} dans PAYT.`;
+    renderPaytInvoicesTable(invoices);
+    wrapEl.style.display='';
+  }catch(e){
+    statusEl.textContent=`Erreur : ${e.message}`;
+  }
+}
+
+function renderPaytInvoicesTable(invoices){
+  const adminMap=Object.fromEntries(paytAdministrations.map(a=>[a.id,a.name]));
+  const rows=invoices.map(inv=>({
+    invoice_number: inv.invoice_number||'—',
+    _debtor:        inv.debtor?.name||inv.debtor_name||inv.debtor_number||'—',
+    invoice_date:   inv.invoice_date||'—',
+    due_date:       inv.due_date||'—',
+    _amount_total:  parseFloat(inv.book_amount_total||inv.amount_total)||0,
+    _amount_open:   parseFloat(inv.book_amount_open||inv.amount_open)||0,
+    _admin_name:    adminMap[inv._administration_id||inv.administration_id]||inv._administration_id||'—',
+    status:         inv.status||'—',
+  }));
+  const thead=document.querySelector('#paytInvTable thead');
+  const tbody=document.querySelector('#paytInvTable tbody');
+  thead.innerHTML='<tr>'+PAYT_INV_COLS.map(c=>`<th>${esc(c.label)}</th>`).join('')+'</tr>';
+  tbody.innerHTML='';
+  rows.forEach(row=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=PAYT_INV_COLS.map(c=>{
+      const v=row[c.key];
+      if(c.type==='date'&&v&&v!=='—'){const[y,m,d]=String(v).split('-');return `<td style="white-space:nowrap;font-variant-numeric:tabular-nums;">${d||v}/${m||''}/${y||''}</td>`;}
+      if(c.type==='number') return `<td style="text-align:right;font-variant-numeric:tabular-nums;">${typeof v==='number'?v.toFixed(2):esc(String(v))}</td>`;
+      return `<td>${esc(String(v??'—'))}</td>`;
+    }).join('');
+    tbody.appendChild(tr);
+  });
+}
 function confirmRestart(){
   document.getElementById('restartWarnBg').classList.add('show');
 }
@@ -2202,8 +2282,8 @@ initClerk();
 if(sessionStorage.getItem('adminAuth')==='1'){
   document.getElementById('btnSettings').style.display='';
 }
-console.log('%cFactuScan — version 76','color:#55D6DE;font-weight:700;font-size:13px;');
+console.log('%cFactuScan — version 77','color:#55D6DE;font-weight:700;font-size:13px;');
 </script>
-<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 76</div>
+<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 77</div>
 </body>
 </html>
