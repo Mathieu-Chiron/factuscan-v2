@@ -3,7 +3,6 @@
 // Returns all invoices for this user from Neon Postgres
 
 import { neon } from '@neondatabase/serverless';
-import { getClerkUserId } from './_clerk-verify.js';
 
 const INIT_SQL = `
   CREATE TABLE IF NOT EXISTS invoices (
@@ -27,10 +26,8 @@ const INIT_SQL = `
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const userId = await getClerkUserId(req);
-  if (!userId) return res.status(401).json({ error: 'unauthorized' });
-
-  const session_id = userId;
+  const { session_id } = req.body || {};
+  if (!session_id) return res.status(400).json({ error: 'missing_session_id' });
 
   const sql = neon(process.env.DATABASE_URL);
 
