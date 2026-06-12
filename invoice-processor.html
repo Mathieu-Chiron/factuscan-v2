@@ -28,6 +28,15 @@ html,body{overflow:hidden;}
 .auth-sub{font-size:14px;color:var(--muted);margin-bottom:2rem;}
 #clerk-sign-in{width:min(400px,92vw);}
 
+/* PAYT SETUP */
+#screen-payt-setup{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);z-index:190;}
+#screen-payt-setup.hidden{display:none;}
+.payt-setup-box{width:min(420px,92vw);display:flex;flex-direction:column;gap:14px;}
+.payt-setup-title{font-size:20px;font-weight:700;color:var(--navy);margin-bottom:2px;}
+.payt-setup-sub{font-size:13px;color:var(--muted);margin-bottom:6px;line-height:1.5;}
+.payt-setup-help{font-size:12px;color:var(--muted);margin-top:2px;}
+#paytSetupError{font-size:13px;color:var(--red);display:none;}
+
 /* UPLOAD */
 #screen-upload{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:transparent;transition:opacity .25s;}
 #screen-upload.out{opacity:0;pointer-events:none;}
@@ -258,6 +267,19 @@ html,body{overflow:hidden;}
   <div class="auth-logo">FactuScan</div>
   <div class="auth-sub">Connectez-vous pour accéder à vos factures</div>
   <div id="clerk-sign-in"></div>
+</div>
+
+<!-- ═══ PAYT SETUP ════════════════════════════════ -->
+<div id="screen-payt-setup" class="hidden">
+  <div class="payt-setup-box">
+    <div class="payt-setup-title">Connectez votre compte PAYT</div>
+    <div class="payt-setup-sub">Entrez votre token API PAYT. Il sera sauvegardé pour vos prochaines connexions.<br>Vous le trouverez dans les paramètres de votre compte PAYT, sous <strong>API &amp; intégrations</strong>.</div>
+    <div style="position:relative;">
+      <input class="input" type="password" id="paytSetupInput" placeholder="Collez votre token ici…" autocomplete="off" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:13px;" onkeydown="if(event.key==='Enter')submitPaytSetup()"/>
+    </div>
+    <div id="paytSetupError"></div>
+    <button class="btn btn-primary" id="paytSetupBtn" onclick="submitPaytSetup()" style="width:100%;">Continuer</button>
+  </div>
 </div>
 
 <!-- ═══ UPLOAD ════════════════════════════════════ -->
@@ -741,7 +763,7 @@ async function initClerk() {
     if (_clerkInst.user) {
       USER_ID = _clerkInst.user.id;
       document.getElementById('screen-auth').classList.add('hidden');
-      await autoRestore();
+      await loadUserSettings();
     } else {
       // Redirect to Clerk's hosted sign-in page (no CSP issues)
       await _clerkInst.redirectToSignIn({ redirectUrl: window.location.href });
@@ -2026,9 +2048,9 @@ function toB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onlo
 // Proxy pour blobs privés — le navigateur ne peut pas fetch directement l'URL signée
 function blobProxyUrl(url){return `/api/blob-get?url=${encodeURIComponent(url)}`;}
 if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-(async function loadCompanies(){
+async function loadCompanies(){
   const token = localStorage.getItem('paytToken');
-  if(!token){ window.location.href='/payt-connect.html'; return; }
+  if(!token) return;
   try {
     const res = await fetch('/api/payt-administrations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
     const data = await res.json().catch(()=>({}));
@@ -2036,7 +2058,6 @@ if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https:
     paytAdministrations = [...data.administrations].sort((a,b)=>a.name.localeCompare(b.name,'fr'));
     const ol = document.getElementById('companiesList');
     ol.innerHTML = paytAdministrations.map(a=>`<li>${esc(a.name)}${a.city ? ' — '+esc(a.city) : ''}</li>`).join('');
-    // Auto-fill target company if only one administration
     if(paytAdministrations.length===1){
       const only=paytAdministrations[0];
       S.invoices.forEach(inv=>{ if(!inv.targetCompany) inv.targetCompany={id:only.id,name:only.name}; });
@@ -2044,7 +2065,55 @@ if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https:
     }
     if(typeof renderExpTable==='function') renderExpTable();
   } catch(e){}
-})();
+}
+
+async function loadUserSettings(){
+  try{
+    const authToken = await getAuthToken();
+    if(!authToken) return;
+    const res = await fetch('/api/user-settings',{method:'GET',headers:{Authorization:`Bearer ${authToken}`}});
+    if(!res.ok) return;
+    const {payt_token} = await res.json().catch(()=>({}));
+    if(payt_token){
+      localStorage.setItem('paytToken', payt_token);
+      await loadCompanies();
+      await autoRestore();
+    } else {
+      document.getElementById('screen-payt-setup').classList.remove('hidden');
+    }
+  }catch(e){ console.error('loadUserSettings error:', e); }
+}
+
+async function submitPaytSetup(){
+  const token = document.getElementById('paytSetupInput').value.trim();
+  const errEl = document.getElementById('paytSetupError');
+  const btn   = document.getElementById('paytSetupBtn');
+  errEl.style.display='none';
+  if(!token){ errEl.textContent='Veuillez entrer un token.'; errEl.style.display=''; return; }
+  btn.disabled=true; btn.textContent='Vérification…';
+  try{
+    // Validate token against PAYT
+    const res = await fetch('/api/payt-administrations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok){
+      errEl.textContent = data.message || 'Token invalide. Vérifiez votre token PAYT.';
+      errEl.style.display='';
+      btn.disabled=false; btn.textContent='Continuer';
+      return;
+    }
+    // Save to DB
+    const authToken = await getAuthToken();
+    await fetch('/api/user-settings',{method:'POST',headers:{'Content-Type':'application/json',...(authToken&&{Authorization:`Bearer ${authToken}`})},body:JSON.stringify({payt_token:token})});
+    localStorage.setItem('paytToken', token);
+    document.getElementById('screen-payt-setup').classList.add('hidden');
+    await loadCompanies();
+    await autoRestore();
+  }catch(e){
+    errEl.textContent='Erreur réseau. Réessayez.';
+    errEl.style.display='';
+    btn.disabled=false; btn.textContent='Continuer';
+  }
+}
 /* ══ DATASET SAVE / RESTORE ══════════════════════════ */
 function saveDataset(){
   try{
@@ -2123,8 +2192,8 @@ initClerk();
 if(sessionStorage.getItem('adminAuth')==='1'){
   document.getElementById('btnSettings').style.display='';
 }
-console.log('%cFactuScan — version 73','color:#55D6DE;font-weight:700;font-size:13px;');
+console.log('%cFactuScan — version 74','color:#55D6DE;font-weight:700;font-size:13px;');
 </script>
-<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 73</div>
+<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 74</div>
 </body>
 </html>
