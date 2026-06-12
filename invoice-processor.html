@@ -1659,6 +1659,14 @@ document.addEventListener('click',()=>{
 });
 
 function showExport(){
+  // Si déjà sur Mes factures avec 0 factures → retour à l'écran upload
+  if(document.getElementById('screen-export').classList.contains('show')&&!S.invoices.length){
+    document.getElementById('screen-export').classList.remove('show');
+    document.getElementById('screen-main').classList.remove('in');
+    const su=document.getElementById('screen-upload');
+    su.style.display=''; setTimeout(()=>su.classList.remove('out'),10);
+    return;
+  }
   const cloturees=S.invoices.filter(i=>i.paytStatus==='Clôturée').length;
   const ouvertes=S.invoices.filter(i=>i.status==='validated'&&i.paytStatus!=='Clôturée'&&i.paytStatus!=='Payée').length;
   const validees=S.invoices.filter(i=>i.status==='validated').length;
@@ -2192,8 +2200,8 @@ initClerk();
 if(sessionStorage.getItem('adminAuth')==='1'){
   document.getElementById('btnSettings').style.display='';
 }
-console.log('%cFactuScan — version 74','color:#55D6DE;font-weight:700;font-size:13px;');
+console.log('%cFactuScan — version 75','color:#55D6DE;font-weight:700;font-size:13px;');
 </script>
-<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 74</div>
+<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 75</div>
 </body>
 </html>
