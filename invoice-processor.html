@@ -1939,6 +1939,7 @@ async function loadPaytInvoices(){
     });
     if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.message||`HTTP ${res.status}`);}
     const {invoices=[]}=await res.json().catch(()=>({}));
+    if(invoices.length>0) console.log('[PAYT] raw invoice[0]:', JSON.stringify(invoices[0], null, 2));
     statusEl.textContent=`${invoices.length} facture${invoices.length!==1?'s':''} trouvée${invoices.length!==1?'s':''} dans PAYT.`;
     renderPaytInvoicesTable(invoices);
     wrapEl.style.display='';
