@@ -1,4 +1,5 @@
 {
+  "type": "module",
   "dependencies": {
     "@clerk/backend": "^3.7.0",
     "@neondatabase/serverless": "^0.10.0",

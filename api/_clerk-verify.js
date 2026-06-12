@@ -5,6 +5,12 @@
 import { verifyToken } from '@clerk/backend';
 
 export async function getClerkUserId(req) {
+  // Test bypass — only active when TEST_MODE=true (never set in production)
+  if (process.env.TEST_MODE === 'true') {
+    const testId = req.headers['x-test-user-id'];
+    if (testId) return testId;
+  }
+
   const auth = req.headers['authorization'];
   if (!auth?.startsWith('Bearer ')) return null;
   const token = auth.slice(7);
