@@ -1955,8 +1955,8 @@ function renderPaytInvoicesTable(invoices){
     _debtor:        inv.debtor?.name||inv.debtor_name||inv.debtor_number||'—',
     invoice_date:   inv.invoice_date||'—',
     due_date:       inv.due_date||'—',
-    _amount_total:  parseFloat(inv.book_amount_total||inv.amount_total)||0,
-    _amount_open:   parseFloat(inv.book_amount_open||inv.amount_open)||0,
+    _amount_total:  parseFloat(inv.book_total_amount||inv.total_amount)||0,
+    _amount_open:   parseFloat(inv.book_open_amount||inv.open_amount)||0,
     _admin_name:    adminMap[inv._administration_id||inv.administration_id]||inv._administration_id||'—',
     status:         inv.status||'—',
   }));
