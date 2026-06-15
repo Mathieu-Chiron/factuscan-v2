@@ -21,6 +21,22 @@
 }
 html,body{overflow:hidden;}
 
+/* AUTH */
+#screen-auth{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);z-index:200;}
+#screen-auth.hidden{display:none;}
+.auth-logo{font-size:24px;font-weight:700;color:var(--navy);margin-bottom:6px;letter-spacing:-.5px;}
+.auth-sub{font-size:14px;color:var(--muted);margin-bottom:2rem;}
+#clerk-sign-in{width:min(400px,92vw);}
+
+/* PAYT SETUP */
+#screen-payt-setup{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);z-index:190;}
+#screen-payt-setup.hidden{display:none;}
+.payt-setup-box{width:min(420px,92vw);display:flex;flex-direction:column;gap:14px;}
+.payt-setup-title{font-size:20px;font-weight:700;color:var(--navy);margin-bottom:2px;}
+.payt-setup-sub{font-size:13px;color:var(--muted);margin-bottom:6px;line-height:1.5;}
+.payt-setup-help{font-size:12px;color:var(--muted);margin-top:2px;}
+#paytSetupError{font-size:13px;color:var(--red);display:none;}
+
 /* UPLOAD */
 #screen-upload{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:transparent;transition:opacity .25s;}
 #screen-upload.out{opacity:0;pointer-events:none;}
@@ -246,6 +262,26 @@ html,body{overflow:hidden;}
 <div class="blob blob-2"></div>
 <div class="blob blob-3"></div>
 
+<!-- ═══ AUTH ══════════════════════════════════════ -->
+<div id="screen-auth">
+  <div class="auth-logo">FactuScan</div>
+  <div class="auth-sub">Connectez-vous pour accéder à vos factures</div>
+  <div id="clerk-sign-in"></div>
+</div>
+
+<!-- ═══ PAYT SETUP ════════════════════════════════ -->
+<div id="screen-payt-setup" class="hidden">
+  <div class="payt-setup-box">
+    <div class="payt-setup-title">Connectez votre compte PAYT</div>
+    <div class="payt-setup-sub">Entrez votre token API PAYT. Il sera sauvegardé pour vos prochaines connexions.<br>Vous le trouverez dans les paramètres de votre compte PAYT, sous <strong>API &amp; intégrations</strong>.</div>
+    <div style="position:relative;">
+      <input class="input" type="password" id="paytSetupInput" placeholder="Collez votre token ici…" autocomplete="off" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:13px;" onkeydown="if(event.key==='Enter')submitPaytSetup()"/>
+    </div>
+    <div id="paytSetupError"></div>
+    <button class="btn btn-primary" id="paytSetupBtn" onclick="submitPaytSetup()" style="width:100%;">Continuer</button>
+  </div>
+</div>
+
 <!-- ═══ UPLOAD ════════════════════════════════════ -->
 <div id="screen-upload" class="z-content">
   <div style="position:fixed;top:16px;right:20px;">
@@ -290,6 +326,7 @@ html,body{overflow:hidden;}
       <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
       <button class="btn btn-neutral btn-sm" id="btnExport" onclick="showExport()" style="display:none;">Exporter</button>
       <button class="btn btn-primary btn-sm" id="btnExtract" onclick="startExtraction()" disabled>Extraire les données</button>
+      <button class="btn btn-ghost btn-sm" onclick="signOut()" title="Se déconnecter" style="opacity:.6;">↩</button>
     </div>
   </div>
 
@@ -392,6 +429,21 @@ html,body{overflow:hidden;}
       <button class="btn btn-neutral" onclick="confirmRestart()">Nouvelle session</button>
     </div>
     <div class="push-summary" id="pushSummary"></div>
+
+    <!-- ── Toutes les factures PAYT ── -->
+    <div style="margin-top:2.5rem;border-top:.5px solid var(--faint-border);padding-top:2rem;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div class="exp-title" style="font-size:18px;">Toutes mes factures PAYT</div>
+          <div class="exp-sub" style="margin-bottom:0;">Factures chargées directement depuis votre compte PAYT.</div>
+        </div>
+        <button class="btn btn-neutral btn-sm" onclick="loadPaytInvoices()">↻ Actualiser</button>
+      </div>
+      <div id="paytInvStatus" style="font-size:13px;color:var(--muted);margin-bottom:10px;display:none;"></div>
+      <div class="exp-table-wrap" id="paytInvWrap" style="display:none;">
+        <table class="exp-table" id="paytInvTable"><thead></thead><tbody></tbody></table>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -691,12 +743,50 @@ const S = {
   invoices:[], cur:-1, busy:false, zipDownloaded:false,
 };
 
-/* ══ USER ID (persistent across sessions) ════════════ */
-const USER_ID = localStorage.getItem('factuscan_user_id') || (()=>{
-  const id='user_'+Math.random().toString(36).slice(2)+Date.now().toString(36);
-  localStorage.setItem('factuscan_user_id',id);
-  return id;
-})();
+/* ══ AUTH (Clerk) ════════════════════════════════════ */
+let USER_ID = null;
+let _clerkInst = null;
+
+async function getAuthToken() {
+  try { return (await _clerkInst?.session?.getToken()) || null; } catch { return null; }
+}
+
+async function signOut() {
+  localStorage.removeItem('factuscan_dataset');
+  await _clerkInst?.signOut();
+  location.reload();
+}
+
+async function initClerk() {
+  try {
+    const { clerkPublishableKey } = await fetch('/api/config').then(r => r.json());
+    if (!clerkPublishableKey) { console.error('Clerk publishable key manquante'); return; }
+
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js';
+      s.crossOrigin = 'anonymous';
+      s.dataset.clerkPublishableKey = clerkPublishableKey;
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+
+    // CDN bundle auto-initializes window.Clerk as an instance (not a class)
+    _clerkInst = window.Clerk;
+    await _clerkInst.load();
+
+    if (_clerkInst.user) {
+      USER_ID = _clerkInst.user.id;
+      document.getElementById('screen-auth').classList.add('hidden');
+      await loadUserSettings();
+    } else {
+      // Redirect to Clerk's hosted sign-in page (no CSP issues)
+      await _clerkInst.redirectToSignIn({ redirectUrl: window.location.href });
+    }
+  } catch(e) {
+    console.error('Clerk init error:', e);
+  }
+}
 
 /* ══ UPLOAD ══════════════════════════════════════════ */
 function onDragOver(e){e.preventDefault();document.getElementById('dropzone').classList.add('over');}
@@ -734,6 +824,7 @@ async function handleFiles(list) {
     document.getElementById('screen-upload').classList.add('out');
     await new Promise(r=>setTimeout(r,280));
     document.getElementById('screen-upload').style.display='none';
+    history.pushState({screen:'editor'},document.title,'/invoice-processor');
     document.getElementById('screen-main').classList.add('in');
   }
 
@@ -1583,39 +1674,54 @@ document.addEventListener('click',()=>{
   if(_openCselPanel){_openCselPanel.style.display='none';_openCselPanel=null;}
 });
 
+/* ══ ROUTING (History API) ════════════════════════════ */
+function _showScreen(name){
+  if(name==='invoices'){
+    const cloturees=S.invoices.filter(i=>i.paytStatus==='Clôturée').length;
+    const ouvertes=S.invoices.filter(i=>i.status==='validated'&&i.paytStatus!=='Clôturée'&&i.paytStatus!=='Payée').length;
+    const validees=S.invoices.filter(i=>i.status==='validated').length;
+    document.getElementById('expStats').innerHTML=`<span style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--navy);padding:10px 16px;background:var(--faint);border-radius:var(--radius-lg);margin-bottom:1.75rem;">
+      <span style="font-weight:600;color:var(--muted);">${S.invoices.length} factures enregistrées</span>
+      <span style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><strong>${validees}</strong> validées</span>
+      <span style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg><strong>${cloturees}</strong> clôturées</span>
+      <span style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E07B00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M13 21V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v16"/><path d="M19 21V9a1 1 0 0 0-1-1h-5"/><path d="M9 11v.01"/></svg><strong>${ouvertes}</strong> ouvertes</span>
+    </span>`;
+    expSort={key:null,dir:'asc'};
+    selectedInvoices.clear();
+    updateSelCount();
+    renderExpTable();
+    document.getElementById('screen-export').classList.add('show');
+    loadPaytInvoices();
+  } else if(name==='editor'){
+    document.getElementById('screen-export').classList.remove('show');
+    document.getElementById('screen-main').classList.add('in');
+    renderSidebar();updateBar();
+    const curOk=S.cur>=0&&S.invoices[S.cur]&&sbEditable(S.invoices[S.cur]);
+    if(curOk) selectInv(S.cur);
+    else{const fi=S.invoices.findIndex(sbEditable);if(fi>=0) selectInv(fi);}
+  } else {
+    document.getElementById('screen-export').classList.remove('show');
+    document.getElementById('screen-main').classList.remove('in');
+    const su=document.getElementById('screen-upload');
+    su.style.display='';setTimeout(()=>su.classList.remove('out'),10);
+  }
+}
+function navigate(path,screen){
+  history.pushState({screen},document.title,path);
+  _showScreen(screen);
+}
+window.addEventListener('popstate',e=>{_showScreen(e.state?.screen||'upload');});
+
 function showExport(){
-  const cloturees=S.invoices.filter(i=>i.paytStatus==='Clôturée').length;
-  const ouvertes=S.invoices.filter(i=>i.status==='validated'&&i.paytStatus!=='Clôturée'&&i.paytStatus!=='Payée').length;
-  const validees=S.invoices.filter(i=>i.status==='validated').length;
-  document.getElementById('expStats').innerHTML=`<span style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--navy);padding:10px 16px;background:var(--faint);border-radius:var(--radius-lg);margin-bottom:1.75rem;">
-    <span style="font-weight:600;color:var(--muted);">${S.invoices.length} factures enregistrées</span>
-    <span style="display:flex;align-items:center;gap:6px;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-      <strong>${validees}</strong> validées
-    </span>
-    <span style="display:flex;align-items:center;gap:6px;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-      <strong>${cloturees}</strong> clôturées
-    </span>
-    <span style="display:flex;align-items:center;gap:6px;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E07B00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M13 21V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v16"/><path d="M19 21V9a1 1 0 0 0-1-1h-5"/><path d="M9 11v.01"/></svg>
-      <strong>${ouvertes}</strong> ouvertes
-    </span>
-  </span>`;
-  expSort={key:null,dir:'asc'};
-  selectedInvoices.clear();
-  updateSelCount();
-  renderExpTable();
-  document.getElementById('screen-export').classList.add('show');
+  // Si déjà sur Mes factures avec 0 factures → retour à l'écran upload
+  if(document.getElementById('screen-export').classList.contains('show')&&!S.invoices.length){
+    navigate('/','upload');
+    return;
+  }
+  navigate('/invoices','invoices');
 }
 function hideExport(){
-  document.getElementById('screen-export').classList.remove('show');
-  document.getElementById('screen-main').classList.add('in');
-  renderSidebar(); updateBar();
-  // Land on an editable invoice (non-locked); prefer current selection if editable
-  const curOk = S.cur>=0 && S.invoices[S.cur] && sbEditable(S.invoices[S.cur]);
-  if(curOk) selectInv(S.cur);
-  else { const fi=S.invoices.findIndex(sbEditable); if(fi>=0) selectInv(fi); }
+  navigate('/invoice-processor','editor');
 }
 
 /* ══ PUSH TO PAYT ════════════════════════════════════ */
@@ -1804,16 +1910,78 @@ async function downloadAll(){
   S.zipDownloaded=true;
 }
 function dlBlob(b,n){const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+
+/* ══ PAYT INVOICE LIST ═══════════════════════════════ */
+const PAYT_INV_COLS=[
+  {label:'N° facture',  key:'invoice_number'},
+  {label:'Débiteur',    key:'_debtor'},
+  {label:'Émission',    key:'invoice_date',  type:'date'},
+  {label:'Échéance',    key:'due_date',      type:'date'},
+  {label:'Montant TTC', key:'_amount_total', type:'number'},
+  {label:'Ouvert',      key:'_amount_open',  type:'number'},
+  {label:'Entreprise',  key:'_admin_name'},
+  {label:'Statut',      key:'status'},
+];
+
+async function loadPaytInvoices(){
+  const token=localStorage.getItem('paytToken');
+  if(!token) return;
+  const statusEl=document.getElementById('paytInvStatus');
+  const wrapEl=document.getElementById('paytInvWrap');
+  statusEl.textContent='Chargement…';statusEl.style.display='';
+  wrapEl.style.display='none';
+  try{
+    const adminIds=paytAdministrations.map(a=>a.id);
+    const res=await fetch('/api/payt-invoices-get',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token,administration_ids:adminIds.length?adminIds:undefined}),
+    });
+    if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.message||`HTTP ${res.status}`);}
+    const {invoices=[]}=await res.json().catch(()=>({}));
+    if(invoices.length>0) console.log('[PAYT] raw invoice[0]:', JSON.stringify(invoices[0], null, 2));
+    statusEl.textContent=`${invoices.length} facture${invoices.length!==1?'s':''} trouvée${invoices.length!==1?'s':''} dans PAYT.`;
+    renderPaytInvoicesTable(invoices);
+    wrapEl.style.display='';
+  }catch(e){
+    statusEl.textContent=`Erreur : ${e.message}`;
+  }
+}
+
+function renderPaytInvoicesTable(invoices){
+  const adminMap=Object.fromEntries(paytAdministrations.map(a=>[a.id,a.name]));
+  const rows=invoices.map(inv=>({
+    invoice_number: inv.invoice_number||'—',
+    _debtor:        inv.debtor?.name||inv.debtor_name||inv.debtor_number||'—',
+    invoice_date:   inv.invoice_date||'—',
+    due_date:       inv.due_date||'—',
+    _amount_total:  parseFloat(inv.book_total_amount||inv.total_amount)||0,
+    _amount_open:   parseFloat(inv.book_open_amount||inv.open_amount)||0,
+    _admin_name:    adminMap[inv._administration_id||inv.administration_id]||inv._administration_id||'—',
+    status:         parseFloat(inv.total_amount)<0 ? 'Avoir' : parseFloat(inv.open_amount)===0 ? 'Payée' : 'En cours',
+  }));
+  const thead=document.querySelector('#paytInvTable thead');
+  const tbody=document.querySelector('#paytInvTable tbody');
+  thead.innerHTML='<tr>'+PAYT_INV_COLS.map(c=>`<th>${esc(c.label)}</th>`).join('')+'</tr>';
+  tbody.innerHTML='';
+  rows.forEach(row=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=PAYT_INV_COLS.map(c=>{
+      const v=row[c.key];
+      if(c.type==='date'&&v&&v!=='—'){const[y,m,d]=String(v).split('-');return `<td style="white-space:nowrap;font-variant-numeric:tabular-nums;">${d||v}/${m||''}/${y||''}</td>`;}
+      if(c.type==='number') return `<td style="text-align:right;font-variant-numeric:tabular-nums;">${typeof v==='number'?v.toFixed(2):esc(String(v))}</td>`;
+      return `<td>${esc(String(v??'—'))}</td>`;
+    }).join('');
+    tbody.appendChild(tr);
+  });
+}
 function confirmRestart(){
   document.getElementById('restartWarnBg').classList.add('show');
 }
 function closeRestartWarn(){document.getElementById('restartWarnBg').classList.remove('show');}
 function goToUpload(){
   closeRestartWarn();
-  document.getElementById('screen-export').classList.remove('show');
-  document.getElementById('screen-main').classList.remove('in');
-  document.getElementById('screen-upload').style.display='';
-  setTimeout(()=>document.getElementById('screen-upload').classList.remove('out'),10);
+  navigate('/','upload');
 }
 
 /* ══ MODAL ═══════════════════════════════════════════ */
@@ -1960,10 +2128,7 @@ function closeClearSession(){document.getElementById('clearSessionBg').classList
 function clearSession(){
   closeClearSession();
   S.invoices=[];S.cur=-1;S.busy=false;S.zipDownloaded=false;
-  document.getElementById('screen-export').classList.remove('show');
-  document.getElementById('screen-main').classList.remove('in');
-  const su=document.getElementById('screen-upload');
-  su.style.display='flex';su.classList.remove('out');
+  navigate('/','upload');
   updateSessionBanner();updateBar();
 }
 
@@ -1973,9 +2138,9 @@ function toB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onlo
 // Proxy pour blobs privés — le navigateur ne peut pas fetch directement l'URL signée
 function blobProxyUrl(url){return `/api/blob-get?url=${encodeURIComponent(url)}`;}
 if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-(async function loadCompanies(){
+async function loadCompanies(){
   const token = localStorage.getItem('paytToken');
-  if(!token){ window.location.href='/payt-connect.html'; return; }
+  if(!token) return;
   try {
     const res = await fetch('/api/payt-administrations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
     const data = await res.json().catch(()=>({}));
@@ -1983,7 +2148,6 @@ if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https:
     paytAdministrations = [...data.administrations].sort((a,b)=>a.name.localeCompare(b.name,'fr'));
     const ol = document.getElementById('companiesList');
     ol.innerHTML = paytAdministrations.map(a=>`<li>${esc(a.name)}${a.city ? ' — '+esc(a.city) : ''}</li>`).join('');
-    // Auto-fill target company if only one administration
     if(paytAdministrations.length===1){
       const only=paytAdministrations[0];
       S.invoices.forEach(inv=>{ if(!inv.targetCompany) inv.targetCompany={id:only.id,name:only.name}; });
@@ -1991,7 +2155,55 @@ if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https:
     }
     if(typeof renderExpTable==='function') renderExpTable();
   } catch(e){}
-})();
+}
+
+async function loadUserSettings(){
+  try{
+    const authToken = await getAuthToken();
+    if(!authToken) return;
+    const res = await fetch('/api/user-settings',{method:'GET',headers:{Authorization:`Bearer ${authToken}`}});
+    if(!res.ok) return;
+    const {payt_token} = await res.json().catch(()=>({}));
+    if(payt_token){
+      localStorage.setItem('paytToken', payt_token);
+      await loadCompanies();
+      await autoRestore();
+    } else {
+      document.getElementById('screen-payt-setup').classList.remove('hidden');
+    }
+  }catch(e){ console.error('loadUserSettings error:', e); }
+}
+
+async function submitPaytSetup(){
+  const token = document.getElementById('paytSetupInput').value.trim();
+  const errEl = document.getElementById('paytSetupError');
+  const btn   = document.getElementById('paytSetupBtn');
+  errEl.style.display='none';
+  if(!token){ errEl.textContent='Veuillez entrer un token.'; errEl.style.display=''; return; }
+  btn.disabled=true; btn.textContent='Vérification…';
+  try{
+    // Validate token against PAYT
+    const res = await fetch('/api/payt-administrations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok){
+      errEl.textContent = data.message || 'Token invalide. Vérifiez votre token PAYT.';
+      errEl.style.display='';
+      btn.disabled=false; btn.textContent='Continuer';
+      return;
+    }
+    // Save to DB
+    const authToken = await getAuthToken();
+    await fetch('/api/user-settings',{method:'POST',headers:{'Content-Type':'application/json',...(authToken&&{Authorization:`Bearer ${authToken}`})},body:JSON.stringify({payt_token:token})});
+    localStorage.setItem('paytToken', token);
+    document.getElementById('screen-payt-setup').classList.add('hidden');
+    await loadCompanies();
+    await autoRestore();
+  }catch(e){
+    errEl.textContent='Erreur réseau. Réessayez.';
+    errEl.style.display='';
+    btn.disabled=false; btn.textContent='Continuer';
+  }
+}
 /* ══ DATASET SAVE / RESTORE ══════════════════════════ */
 function saveDataset(){
   try{
@@ -2007,9 +2219,12 @@ function saveDataset(){
 
 async function saveToDb(snap){
   try{
+    if(!USER_ID) return;
+    const token = await getAuthToken();
     await fetch('/api/db-save',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({session_id:USER_ID,invoices:snap||[]}),
+      method:'POST',
+      headers:{'Content-Type':'application/json',...(token&&{Authorization:`Bearer ${token}`})},
+      body:JSON.stringify({invoices:snap||[]}),
     });
   }catch(e){}
 }
@@ -2028,18 +2243,20 @@ function restoreDataset(){
     document.getElementById('screen-upload').classList.add('out');
     setTimeout(()=>{
       document.getElementById('screen-upload').style.display='none';
+      history.pushState({screen:'editor'},document.title,'/invoice-processor');
       document.getElementById('screen-main').classList.add('in');
       renderSidebar();selectInv(0);updateBar();
     },280);
   }catch(e){}
 }
-(async function autoRestore(){
+async function autoRestore(){
   try{
     // Priorité 1 : localStorage (immédiat)
     let snap=JSON.parse(localStorage.getItem('factuscan_dataset')||'[]');
     // Priorité 2 : DB si localStorage vide
     if(!snap.length){
-      const r=await fetch('/api/db-load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:USER_ID})});
+      const token = await getAuthToken();
+      const r=await fetch('/api/db-load',{method:'POST',headers:{'Content-Type':'application/json',...(token&&{Authorization:`Bearer ${token}`})},body:JSON.stringify({})});
       if(r.ok){
         const {invoices}=await r.json().catch(()=>({}));
         if(invoices?.length){
@@ -2058,15 +2275,16 @@ function restoreDataset(){
     });
     // Aller directement à l'écran export
     document.getElementById('screen-upload').style.display='none';
-    showExport();
+    navigate('/invoices','invoices');
     updateSessionBanner();
   }catch(e){}
-})();
+}
+initClerk();
 if(sessionStorage.getItem('adminAuth')==='1'){
   document.getElementById('btnSettings').style.display='';
 }
-console.log('%cFactuScan — version 72','color:#55D6DE;font-weight:700;font-size:13px;');
+console.log('%cFactuScan — version 77','color:#55D6DE;font-weight:700;font-size:13px;');
 </script>
-<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 72</div>
+<div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 77</div>
 </body>
 </html>

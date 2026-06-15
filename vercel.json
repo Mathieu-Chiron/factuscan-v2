@@ -1,6 +1,8 @@
 {
   "rewrites": [
     { "source": "/", "destination": "/invoice-processor.html" },
+    { "source": "/invoice-processor", "destination": "/invoice-processor.html" },
+    { "source": "/invoices", "destination": "/invoice-processor.html" },
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/((?!api/).*)", "destination": "/invoice-processor.html" }
   ],
@@ -10,7 +12,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.public.blob.vercel-storage.com https://api.paytsoftware.com; worker-src blob:; img-src 'self' blob: data: https://*.public.blob.vercel-storage.com; object-src blob:;"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://*.clerk.accounts.dev https://*.clerk.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.public.blob.vercel-storage.com https://api.paytsoftware.com https://*.clerk.com https://*.clerk.accounts.dev; worker-src blob:; img-src 'self' blob: data: https://*.public.blob.vercel-storage.com https://img.clerk.com; object-src blob:; frame-src https://*.clerk.accounts.dev https://accounts.clerk.dev https://*.clerk.com;"
         }
       ]
     }
