@@ -92,8 +92,8 @@ html,body{overflow:hidden;}
 .sb-ign-item.active{background:var(--amber-bg);box-shadow:0 0 0 .5px var(--amber);}
 .sb-ign-name{font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);}
 .sb-footer{padding:10px;border-top:.5px solid var(--faint-border);flex-shrink:0;}
-.add-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:7px;border:1.5px dashed var(--faint-border-strong);border-radius:var(--radius);font-size:14px;color:var(--muted);cursor:pointer;background:transparent;font-family:var(--font);transition:border-color .15s,color .15s;}
-.add-btn:hover{border-color:var(--teal);color:var(--teal);}
+.add-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:9px;border:1.5px solid #2563EB;border-radius:var(--radius);font-size:14px;font-weight:700;color:#2563EB;cursor:pointer;background:rgba(37,99,235,0.06);font-family:var(--font);transition:border-color .15s,color .15s,background .15s;}
+.add-btn:hover{border-color:#1D4ED8;color:#1D4ED8;background:rgba(37,99,235,0.12);}
 
 /* CONTENT */
 .content{flex:1;display:flex;overflow:hidden;}
@@ -326,7 +326,6 @@ html,body{overflow:hidden;}
     <div class="topbar-right">
       <button class="btn btn-ghost btn-sm" id="btnSettings" style="display:none;" onclick="openModal()">Paramètres</button>
       <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
-      <button class="btn btn-neutral btn-sm" id="btnExport" onclick="showExport()" style="display:none;">Exporter</button>
       <button class="btn btn-primary btn-sm" id="btnExtract" onclick="startExtraction()" disabled>Extraire les données</button>
       <button class="btn btn-ghost btn-sm" onclick="signOut()" title="Se déconnecter" style="opacity:.6;">↩</button>
     </div>
@@ -829,9 +828,11 @@ async function handleFiles(list) {
   if (!toUpload.length) return;
 
   renderSidebar(); updateBar();
-  if (S.cur===-1 || !sbEditable(S.invoices[S.cur])) {
-    const fi=S.invoices.findIndex(sbEditable); if(fi>=0) selectInv(fi);
-  }
+  try {
+    if (S.cur===-1 || !sbEditable(S.invoices[S.cur])) {
+      const fi=S.invoices.findIndex(sbEditable); if(fi>=0) selectInv(fi);
+    }
+  } catch(e) { console.error('[handleFiles] selectInv error:', e); }
 
   if (needsTransition) {
     document.getElementById('screen-upload').classList.add('out');
@@ -855,6 +856,8 @@ async function handleFiles(list) {
 
   renderSidebar(); updateBar();
   if(S.cur>=0) selectInv(S.cur);
+  // Reset inputs so the same file can be re-selected
+  ['fi1','fi2'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   startExtraction();
 }
 
@@ -877,7 +880,7 @@ function renderSidebar() {
     const el=document.createElement('div');
     const isVal=inv.status==='validated';
     el.className='inv-item'+(i===S.cur?' active':'')+(isVal?' inv-validated':'');
-    const conf=inv.confidence!==null?`<span class="inv-conf">${inv.confidence}%</span>`:'';
+    const conf='';
     const check=isVal?`<span class="inv-check">✓</span>`:'';
     el.innerHTML=`<div class="inv-dot s-${inv.status}"></div><span class="inv-name" title="${esc(inv.fileName)}">${esc(shortName(inv.fileName))}</span>${conf}${check}<button class="inv-remove" onclick="event.stopPropagation();confirmRemove(${i})" title="Écarter cette facture">✕</button>`;
     el.onclick=()=>selectInv(i);
@@ -918,7 +921,7 @@ function selectInv(i) {
   const allDone=S.invoices.length>0&&S.invoices.every(x=>x.status==='validated'||x.status==='skipped');
   const currentValidated=inv.status==='validated';
   const btn=document.getElementById('btnValidate');
-  if(btn){if(allDone&&currentValidated){btn.textContent='Terminer et exporter ✓';btn.onclick=preExportCheck;}else{btn.textContent='Valider ✓';btn.onclick=validateInvoice;}}
+  if(btn){if(allDone&&currentValidated){btn.textContent='Envoyer sur PAYT →';btn.onclick=preExportCheck;}else{btn.textContent='Valider ✓';btn.onclick=validateInvoice;}}
 }
 
 /* ══ PDF PREVIEW ═════════════════════════════════════ */
@@ -1214,7 +1217,7 @@ function renderBadges(inv) {
     if(inv.status==='validated') b.push('<span class="badge b-ok">Validée</span>');
     else if(inv.status==='skipped') b.push('<span class="badge b-warn">Ignorée</span>');
     else if(inv.status==='error') b.push('<span class="badge b-err">Erreur</span>');
-    if(inv.confidence!==null){const c=inv.confidence;b.push(`<span class="badge ${c>=80?'b-ok':c>=50?'b-warn':'b-err'}">Confiance ${c}%</span>`);}
+
     if(inv.repaired) b.push('<span class="badge b-warn">JSON réparé</span>');
     return b.join('');
   };
@@ -1230,7 +1233,7 @@ function updateBar(){
   const total=editableInvs.length;
   const pending=editableInvs.filter(i=>i.status==='pending').length;
   document.getElementById('btnExtract').disabled=pending===0||S.busy;
-  document.getElementById('btnExport').style.display=done>0?'':'none';
+
   if(total>0){
     document.getElementById('progWrap').style.display='flex';
     document.getElementById('progFill').style.width=Math.round(done/total*100)+'%';
@@ -1370,7 +1373,7 @@ function validateInvoice(){
   const allDone=S.invoices.length>0&&S.invoices.every(x=>x.status==='validated'||x.status==='skipped');
   if(allDone){
     const btn=document.getElementById('btnValidate');
-    if(btn){btn.textContent='Terminer et exporter ✓';btn.onclick=preExportCheck;}
+    if(btn){btn.textContent='Envoyer sur PAYT →';btn.onclick=preExportCheck;}
     return;
   }
   const next=S.invoices.findIndex((x,i)=>i>S.cur&&(x.status==='extracted'||x.status==='error'));
@@ -2282,7 +2285,7 @@ function preExportCheck(){
     if(inv.status!=='skipped'&&!checkFields(inv)){selectInv(S.cur);return;}
   }
   const skipped=S.invoices.filter(x=>x.status==='skipped');
-  if(!skipped.length){showExport();return;}
+  if(!skipped.length){pushAndExport();return;}
   const count=skipped.length;
   const plural=count>1;
   document.getElementById('skipWarnSub').textContent=
@@ -2292,7 +2295,65 @@ function preExportCheck(){
   document.getElementById('skipWarnBg').classList.add('show');
 }
 function closeSkipWarn(){document.getElementById('skipWarnBg').classList.remove('show');}
-function closeSkipWarnAndExport(){closeSkipWarn();showExport();}
+function closeSkipWarnAndExport(){closeSkipWarn();pushAndExport();}
+
+async function pushAndExport(){
+  const toCreate=S.invoices.filter(inv=>inv.status==='validated'&&inv.targetCompany&&!inv.fromRestore);
+  if(!toCreate.length){navigate('/invoice-processor','editor');return;}
+
+  const btn=document.getElementById('btnValidate');
+  if(btn){btn.disabled=true;btn.textContent='Envoi vers PAYT…';}
+
+  const token=localStorage.getItem('paytToken');
+  if(!token){if(btn){btn.disabled=false;btn.textContent='Envoyer sur PAYT →';}navigate('/invoice-processor','editor');return;}
+
+  const invoicesPayload=toCreate.map(inv=>{
+    const debtor_number=computeDebtorCode(inv.data)||generateDebtorCode(inv.data)||'UNKNOWN';
+    const total=parseFloat(inv.data.invoice_total_amount_inc_vat)||0;
+    const open=parseFloat(inv.data.invoice_open_amount_inc_vat)||0;
+    return{
+      administration_id:inv.targetCompany.id,
+      invoice_number:inv.data.invoice_number,
+      debtor_number,
+      invoice_date:inv.data.invoice_date,
+      due_date:inv.data.invoice_due_date,
+      total_amount:String(total),
+      open_amount:String(open),
+      currency_code:'EUR',
+      debtor_lastname:inv.data.debtor_lastname||undefined,
+      debtor_post_street_1:inv.data.debtor_post_street_1||undefined,
+      debtor_post_postalcode:inv.data.debtor_post_postalcode?String(inv.data.debtor_post_postalcode):undefined,
+      debtor_post_city:inv.data.debtor_post_city||undefined,
+      debtor_post_country_code:inv.data.debtor_post_country_code||'FR',
+      debtor_email:inv.data.debtor_email||undefined,
+    };
+  });
+
+  try{
+    const res=await fetch('/api/payt-invoices-create',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token,invoices:invoicesPayload}),
+    });
+    const data=await res.json().catch(()=>({}));
+    const results=data?.results||{};
+
+    let ok=0,err=0;
+    toCreate.forEach(inv=>{
+      const invNum=inv.data.invoice_number;
+      const r=results[invNum];
+      if(r?.success){inv.pushStatus='success';inv.paytStatus='En cours';ok++;}
+      else{inv.pushStatus='error';inv.pushNote=r?.error||'Erreur inconnue';err++;}
+    });
+    saveDataset();
+    console.log('[pushAndExport] ok='+ok+' err='+err);
+  }catch(e){
+    toCreate.forEach(inv=>{inv.pushStatus='error';inv.pushNote='Erreur réseau';});
+    console.error('[pushAndExport]',e);
+  }
+
+  if(btn){btn.disabled=false;btn.textContent='Envoyer sur PAYT →';}
+  navigate('/invoices','invoices');
+}
 
 /* ══ DUPLICATE MODAL ════════════════════════════════ */
 function showDupToast(names){
@@ -2360,7 +2421,6 @@ resetInactivityTimer();
 /* ══ SESSION BANNER ══════════════════════════════════ */
 function updateSessionBanner(){
   const n=S.invoices.length;
-  document.getElementById('btnClearSession').style.display=n>0?'':'none';
   document.getElementById('versionTag').style.display=n>0?'none':'';
 }
 function confirmClearSession(){document.getElementById('clearSessionBg').classList.add('show');}
@@ -2514,7 +2574,7 @@ async function autoRestore(){
         pushStatus:d.pushStatus||null,pushNote:d.pushNote||null,uploadDate:d.uploadDate||null,fromRestore:true});
     });
     // Aller directement à l'écran /invoices, sauf si l'utilisateur a déjà navigué ailleurs
-    const userNavigated=document.getElementById('screen-main').classList.contains('in')||document.getElementById('screen-export').classList.contains('show')||document.getElementById('screen-invoice-edit').classList.contains('show');
+    const userNavigated=document.getElementById('screen-main').classList.contains('in')||document.getElementById('screen-export').classList.contains('show')||document.getElementById('screen-invoice-edit').classList.contains('show')||S.invoices.some(inv=>!inv.fromRestore);
     if(userNavigated) return;
     document.getElementById('screen-upload').style.display='none';
     navigate('/invoices','invoices');

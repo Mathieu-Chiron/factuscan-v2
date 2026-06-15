@@ -1,9 +1,10 @@
 // api/db-save.js
-// POST { session_id, invoices: [...] }
+// POST { invoices: [...] }  (Authorization: Bearer <clerk-token>)
 // Upsert invoice metadata into Neon Postgres
 // Returns: { ok: true }
 
 import { neon } from '@neondatabase/serverless';
+import { getClerkUserId } from './_clerk-verify.js';
 
 const INIT_SQL = `
   CREATE TABLE IF NOT EXISTS invoices (
@@ -27,8 +28,9 @@ const INIT_SQL = `
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { session_id, invoices } = req.body || {};
-  if (!session_id) return res.status(400).json({ error: 'missing_session_id' });
+  const session_id = await getClerkUserId(req);
+  if (!session_id) return res.status(401).json({ error: 'unauthorized' });
+  const { invoices } = req.body || {};
   if (!Array.isArray(invoices)) return res.status(400).json({ error: 'missing_invoices' });
 
   const sql = neon(process.env.DATABASE_URL);
