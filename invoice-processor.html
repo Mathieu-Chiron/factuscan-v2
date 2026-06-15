@@ -1197,9 +1197,10 @@ function renderBadges(inv) {
 
 /* ══ EXTRACTION ══════════════════════════════════════ */
 function updateBar(){
-  const done=S.invoices.filter(i=>i.status==='validated'||i.status==='skipped').length;
-  const total=S.invoices.length;
-  const pending=S.invoices.filter(i=>i.status==='pending').length;
+  const editableInvs=S.invoices.filter(sbEditable);
+  const done=editableInvs.filter(i=>i.status==='validated'||i.status==='skipped').length;
+  const total=editableInvs.length;
+  const pending=editableInvs.filter(i=>i.status==='pending').length;
   document.getElementById('btnExtract').disabled=pending===0||S.busy;
   document.getElementById('btnExport').style.display=done>0?'':'none';
   if(total>0){
@@ -1714,7 +1715,8 @@ function showExport(){
   navigate('/invoices','invoices');
 }
 function hideExport(){
-  navigate('/invoice-processor','editor');
+  if(S.invoices.length>0) navigate('/invoice-processor','editor');
+  else navigate('/','upload');
 }
 
 /* ══ PUSH TO PAYT ════════════════════════════════════ */
@@ -1951,7 +1953,7 @@ function renderPaytInvoicesTable(invoices){
     _amount_total:  parseFloat(inv.book_total_amount||inv.total_amount)||0,
     _amount_open:   parseFloat(inv.book_open_amount||inv.open_amount)||0,
     _admin_name:    adminMap[inv._administration_id||inv.administration_id]||inv._administration_id||'—',
-    status:         parseFloat(inv.total_amount)<0 ? 'Avoir' : parseFloat(inv.open_amount)===0 ? 'Payée' : 'En cours',
+    status:         parseFloat(inv.total_amount)<0 ? 'Clôturée' : parseFloat(inv.open_amount)===0 ? 'Payée' : 'En cours',
   }));
   const thead=document.querySelector('#paytInvTable thead');
   const tbody=document.querySelector('#paytInvTable tbody');
@@ -1960,7 +1962,7 @@ function renderPaytInvoicesTable(invoices){
   rows.forEach(row=>{
     const tr=document.createElement('tr');
     if(row.status==='Payée') tr.style.background='rgba(50,192,130,0.10)';
-    else if(row.status==='Avoir') tr.style.background='rgba(245,166,35,0.12)';
+    else if(row.status==='Clôturée') tr.style.background='rgba(245,166,35,0.12)';
     tr.innerHTML=PAYT_INV_COLS.map(c=>{
       const v=row[c.key];
       if(c.type==='date'&&v&&v!=='—'){const[y,m,d]=String(v).split('-');return `<td style="white-space:nowrap;font-variant-numeric:tabular-nums;">${d||v}/${m||''}/${y||''}</td>`;}
@@ -2268,7 +2270,9 @@ async function autoRestore(){
         amountPaid:d.amountPaid??null,baseOpenAmount:d.baseOpenAmount??null,pdfError:d.pdfError||null,
         pushStatus:d.pushStatus||null,pushNote:d.pushNote||null,uploadDate:d.uploadDate||null,fromRestore:true});
     });
-    // Aller directement à l'écran export
+    // Aller directement à l'écran /invoices, sauf si l'utilisateur a déjà navigué ailleurs
+    const userNavigated=document.getElementById('screen-main').classList.contains('in')||document.getElementById('screen-export').classList.contains('show');
+    if(userNavigated) return;
     document.getElementById('screen-upload').style.display='none';
     navigate('/invoices','invoices');
     updateSessionBanner();
