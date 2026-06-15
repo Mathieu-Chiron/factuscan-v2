@@ -404,34 +404,19 @@ html,body{overflow:hidden;}
   <div class="exp-wrap">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.5rem;">
       <div><div class="exp-title">Mes factures</div><div class="exp-sub">Résumé des factures traitées.</div></div>
-      <button class="btn btn-neutral btn-sm" onclick="hideExport()">← Retour</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary btn-sm" onclick="navigate('/','upload')">+ Ajouter des factures</button>
+        <button class="btn btn-neutral btn-sm" onclick="hideExport()">← Retour</button>
+      </div>
     </div>
-    <div class="exp-stats" id="expStats"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-      <button class="btn btn-sm" id="btnSetPayee" onclick="bulkSetStatus('Payée')" style="background:rgba(50,192,130,0.12);border-color:rgba(50,192,130,0.4);color:#085041;font-size:12px;">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#32C082" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:middle;"><path d="M20 6L9 17l-5-5"/></svg>Enregistrer comme Payées
-      </button>
-      <button class="btn btn-sm" id="btnSetCloturee" onclick="bulkSetStatus('Clôturée')" style="background:rgba(217,31,44,0.06);border-color:rgba(217,31,44,0.25);color:var(--red);font-size:12px;">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:middle;"><path d="M18 6L6 18M6 6l12 12"/></svg>Enregistrer comme Clôturées
-      </button>
-      <button class="btn btn-sm" id="btnDeleteSel" onclick="deleteSelected()" style="background:#111;border-color:#111;color:#fff;font-size:12px;">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:middle;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>Supprimer
-      </button>
-      <span id="selCount" style="font-size:12px;color:var(--muted);margin-left:4px;"></span>
-    </div>
-    <div class="sort-hint">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l4-4 4 4M7 5v14M21 15l-4 4-4-4M17 19V5"/></svg>
-      Cliquez sur un en-tête de colonne pour trier — un second clic inverse l'ordre.
-    </div>
-    <div class="exp-table-wrap"><table class="exp-table" id="expTable"><thead></thead><tbody></tbody></table></div>
-    <div class="exp-actions">
-<button class="btn btn-primary" id="btnPushPayt" onclick="pushToPayt()" style="background:var(--navy);border-color:var(--navy);">Envoyer vers PAYT</button>
-      <button class="btn btn-neutral" onclick="confirmRestart()">Nouvelle session</button>
-    </div>
-    <div class="push-summary" id="pushSummary"></div>
+    <div id="expStats" style="display:none;"></div>
+    <div id="selCount" style="display:none;"></div>
+    <div id="pushSummary" style="display:none;"></div>
+    <table id="expTable" style="display:none;"><thead></thead><tbody></tbody></table>
+    <div id="btnPushPayt" style="display:none;"></div>
 
     <!-- ── Toutes les factures PAYT ── -->
-    <div style="margin-top:2.5rem;border-top:.5px solid var(--faint-border);padding-top:2rem;">
+    <div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;flex-wrap:wrap;gap:10px;">
         <div>
           <div class="exp-title" style="font-size:18px;">Toutes mes factures PAYT</div>
@@ -1974,6 +1959,8 @@ function renderPaytInvoicesTable(invoices){
   tbody.innerHTML='';
   rows.forEach(row=>{
     const tr=document.createElement('tr');
+    if(row.status==='Payée') tr.style.background='rgba(50,192,130,0.10)';
+    else if(row.status==='Avoir') tr.style.background='rgba(245,166,35,0.12)';
     tr.innerHTML=PAYT_INV_COLS.map(c=>{
       const v=row[c.key];
       if(c.type==='date'&&v&&v!=='—'){const[y,m,d]=String(v).split('-');return `<td style="white-space:nowrap;font-variant-numeric:tabular-nums;">${d||v}/${m||''}/${y||''}</td>`;}
