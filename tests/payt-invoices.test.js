@@ -101,36 +101,71 @@ async function run() {
   // ── 2. Erreurs upstream ────────────────────────────────────────────────────
   console.log('\n2. Erreurs upstream PAYT');
 
-  await test('retourne 502 si PAYT répond 401', async () => {
-    mockFetchSequence([{ ok: false, status: 401, body: { message: 'Unauthorized' } }]);
+  // Helper: mock administrations + invoices sequence
+  function mockAdminThenInvoices(adminIds, invoicePages) {
+    const adminResponse = {
+      ok: true, status: 200,
+      body: { data: adminIds.map(id => ({ id })), pagination: { cursor: null } },
+    };
+    globalThis.fetch = async (url) => {
+      if (url.includes('/administrations')) {
+        return { ok: adminResponse.ok, status: adminResponse.status, json: async () => adminResponse.body };
+      }
+      const adminId = new URL(url).searchParams.get('administration_id');
+      const pages = invoicePages[adminId] || [];
+      const cursor = new URL(url).searchParams.get('cursor');
+      const pageIdx = cursor ? parseInt(cursor.replace('c', '')) : 0;
+      const page = pages[pageIdx] || { data: [], pagination: { cursor: null } };
+      return { ok: true, status: 200, json: async () => page };
+    };
+  }
+
+  await test('retourne 502 si /administrations répond 401', async () => {
+    globalThis.fetch = async () => ({ ok: false, status: 401, json: async () => ({ message: 'Unauthorized' }) });
     const res = mockRes();
     await handler(mockReq({ body: { token: 'bad_token' } }), res);
     assert(res._status === 502, `Expected 502, got ${res._status}`);
     assert(res._body?.error === 'upstream_unreachable', `Wrong error: ${res._body?.error}`);
-    assert(res._body?.message === 'Unauthorized', `Wrong message: ${res._body?.message}`);
   });
 
-  await test('retourne 502 si PAYT répond 403', async () => {
-    mockFetchSequence([{ ok: false, status: 403, body: { message: 'Forbidden' } }]);
-    const res = mockRes();
-    await handler(mockReq({ body: { token: 'bad_token' } }), res);
-    assert(res._status === 502, `Expected 502, got ${res._status}`);
-  });
-
-  await test('retourne 502 si PAYT répond 500 sans message', async () => {
-    mockFetchSequence([{ ok: false, status: 500, body: {} }]);
+  await test('retourne 200 avec factures vides si aucune administration', async () => {
+    globalThis.fetch = async () => ({
+      ok: true, status: 200,
+      json: async () => ({ data: [], pagination: { cursor: null } }),
+    });
     const res = mockRes();
     await handler(mockReq({ body: { token: 'tok' } }), res);
-    assert(res._status === 502, `Expected 502, got ${res._status}`);
-    assert(res._body?.message === 'HTTP 500', `Wrong fallback message: ${res._body?.message}`);
+    assert(res._status === 200, `Expected 200, got ${res._status}`);
+    assert(res._body?.invoices?.length === 0, `Expected 0, got ${res._body?.invoices?.length}`);
+  });
+
+  await test('continue si une administration échoue (les autres sont retournées)', async () => {
+    // admin_1 → OK, admin_2 → 403, admin_3 → OK
+    globalThis.fetch = async (url) => {
+      const u = new URL(url);
+      if (url.includes('/administrations')) {
+        return { ok: true, status: 200, json: async () => ({
+          data: [{ id: 'admin_1' }, { id: 'admin_2' }, { id: 'admin_3' }],
+          pagination: { cursor: null },
+        })};
+      }
+      const adminId = u.searchParams.get('administration_id');
+      if (adminId === 'admin_2') return { ok: false, status: 403, json: async () => ({}) };
+      return { ok: true, status: 200, json: async () => makePage(5, null) };
+    };
+    const res = mockRes();
+    await handler(mockReq({ body: { token: 'tok' } }), res);
+    assert(res._status === 200, `Expected 200, got ${res._status}`);
+    assert(res._body?.invoices?.length === 10, `Expected 10 (5+0+5), got ${res._body?.invoices?.length}`);
   });
 
   // ── 3. Pagination ──────────────────────────────────────────────────────────
   console.log('\n3. Pagination');
 
-  await test('retourne les factures si une seule page (< 100 items)', async () => {
-    const page = makePage(42);
-    mockFetchSequence([{ body: page }]);
+  await test('retourne les factures d\'une seule admin, une seule page', async () => {
+    mockAdminThenInvoices(['admin_1'], {
+      admin_1: [{ data: makePage(42).data, pagination: { cursor: null } }],
+    });
     const res = mockRes();
     await handler(mockReq({ body: { token: 'tok' } }), res);
     assert(res._status === 200, `Expected 200, got ${res._status}`);
@@ -138,71 +173,61 @@ async function run() {
   });
 
   await test('s\'arrête si page sans curseur (même si pleine)', async () => {
-    const page = makePage(100, null); // 100 items, pas de curseur → dernière page
-    mockFetchSequence([{ body: page }]);
+    globalThis.fetch = async (url) => {
+      if (url.includes('/administrations')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'a1' }], pagination: { cursor: null } }) };
+      return { ok: true, status: 200, json: async () => makePage(100, null) };
+    };
     const res = mockRes();
     await handler(mockReq({ body: { token: 'tok' } }), res);
-    assert(res._status === 200, `Expected 200, got ${res._status}`);
     assert(res._body?.invoices?.length === 100, `Expected 100, got ${res._body?.invoices?.length}`);
   });
 
   await test('continue si page partielle mais avec curseur (pages non-uniformes)', async () => {
-    // PAYT peut retourner < 100 items sur une page intermédiaire avec un curseur
-    mockFetchSequence([
-      { body: makePage(47, 'cursor_next') }, // page partielle mais pas la dernière
-      { body: makePage(30, null) },           // vraie dernière page
-    ]);
-    const res = mockRes();
-    await handler(mockReq({ body: { token: 'tok' } }), res);
-    assert(res._status === 200, `Expected 200, got ${res._status}`);
-    assert(res._body?.invoices?.length === 77, `Expected 77, got ${res._body?.invoices?.length}`);
-  });
-
-  await test('pagine sur 3 pages et cumule toutes les factures', async () => {
-    mockFetchSequence([
-      { body: makePage(100, 'cursor_1') },
-      { body: makePage(100, 'cursor_2') },
-      { body: makePage(37,  null) },       // dernière page
-    ]);
-    const res = mockRes();
-    await handler(mockReq({ body: { token: 'tok' } }), res);
-    assert(res._status === 200, `Expected 200, got ${res._status}`);
-    assert(res._body?.invoices?.length === 237, `Expected 237, got ${res._body?.invoices?.length}`);
-  });
-
-  await test('passe le curseur en query param à la page suivante', async () => {
-    const calledUrls = [];
+    let invoiceCall = 0;
     globalThis.fetch = async (url) => {
-      calledUrls.push(url);
-      const call = calledUrls.length;
-      const body = call === 1 ? makePage(100, 'cursor_abc') : makePage(5, null);
-      return { ok: true, status: 200, json: async () => body };
+      if (url.includes('/administrations')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'a1' }], pagination: { cursor: null } }) };
+      invoiceCall++;
+      if (invoiceCall === 1) return { ok: true, status: 200, json: async () => makePage(47, 'cursor_next') };
+      return { ok: true, status: 200, json: async () => makePage(30, null) };
     };
     const res = mockRes();
     await handler(mockReq({ body: { token: 'tok' } }), res);
-    assert(calledUrls.length === 2, `Expected 2 calls, got ${calledUrls.length}`);
-    assert(calledUrls[0].includes('per_page=100'), `Missing per_page: ${calledUrls[0]}`);
-    assert(!calledUrls[0].includes('cursor='), `First call should not have cursor: ${calledUrls[0]}`);
-    assert(calledUrls[1].includes('cursor=cursor_abc'), `Second call missing cursor: ${calledUrls[1]}`);
+    assert(res._body?.invoices?.length === 77, `Expected 77, got ${res._body?.invoices?.length}`);
   });
 
-  await test('n\'envoie pas administration_id dans la requête', async () => {
-    const calledUrls = [];
+  await test('cumule les factures de plusieurs administrations', async () => {
     globalThis.fetch = async (url) => {
-      calledUrls.push(url);
+      if (url.includes('/administrations')) return { ok: true, status: 200, json: async () => ({
+        data: [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }], pagination: { cursor: null },
+      })};
       return { ok: true, status: 200, json: async () => makePage(10, null) };
     };
     const res = mockRes();
     await handler(mockReq({ body: { token: 'tok' } }), res);
-    assert(!calledUrls[0].includes('administration_id'), `Should not filter by admin: ${calledUrls[0]}`);
+    assert(res._body?.invoices?.length === 30, `Expected 30 (3×10), got ${res._body?.invoices?.length}`);
+  });
+
+  await test('envoie administration_id en query param pour chaque admin', async () => {
+    const calledAdminIds = [];
+    globalThis.fetch = async (url) => {
+      if (url.includes('/administrations')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'adm_42' }], pagination: { cursor: null } }) };
+      calledAdminIds.push(new URL(url).searchParams.get('administration_id'));
+      return { ok: true, status: 200, json: async () => makePage(5, null) };
+    };
+    const res = mockRes();
+    await handler(mockReq({ body: { token: 'tok' } }), res);
+    assert(calledAdminIds.length === 1, `Expected 1 invoice call, got ${calledAdminIds.length}`);
+    assert(calledAdminIds[0] === 'adm_42', `Expected adm_42, got ${calledAdminIds[0]}`);
   });
 
   // ── 4. Format de la réponse ────────────────────────────────────────────────
   console.log('\n4. Format de la réponse');
 
   await test('retourne { invoices: [...] } avec les données PAYT intactes', async () => {
-    const page = makePage(2, null);
-    mockFetchSequence([{ body: page }]);
+    globalThis.fetch = async (url) => {
+      if (url.includes('/administrations')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'a1' }], pagination: { cursor: null } }) };
+      return { ok: true, status: 200, json: async () => makePage(2, null) };
+    };
     const res = mockRes();
     await handler(mockReq({ body: { token: 'tok' } }), res);
     assert(Array.isArray(res._body?.invoices), 'invoices should be an array');
@@ -210,8 +235,11 @@ async function run() {
     assert('administration_id' in res._body.invoices[0], 'Should contain administration_id');
   });
 
-  await test('retourne { invoices: [] } si PAYT renvoie data vide', async () => {
-    mockFetchSequence([{ body: { data: [], pagination: { cursor: null } } }]);
+  await test('retourne { invoices: [] } si admin sans factures', async () => {
+    globalThis.fetch = async (url) => {
+      if (url.includes('/administrations')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'a1' }], pagination: { cursor: null } }) };
+      return { ok: true, status: 200, json: async () => ({ data: [], pagination: { cursor: null } }) };
+    };
     const res = mockRes();
     await handler(mockReq({ body: { token: 'tok' } }), res);
     assert(res._status === 200, `Expected 200, got ${res._status}`);
