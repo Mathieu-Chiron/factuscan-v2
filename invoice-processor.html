@@ -1958,7 +1958,7 @@ function renderPaytInvoicesTable(invoices){
     _amount_total:  parseFloat(inv.book_total_amount||inv.total_amount)||0,
     _amount_open:   parseFloat(inv.book_open_amount||inv.open_amount)||0,
     _admin_name:    adminMap[inv._administration_id||inv.administration_id]||inv._administration_id||'—',
-    status:         inv.status||'—',
+    status:         parseFloat(inv.total_amount)<0 ? 'Avoir' : parseFloat(inv.open_amount)===0 ? 'Payée' : 'En cours',
   }));
   const thead=document.querySelector('#paytInvTable thead');
   const tbody=document.querySelector('#paytInvTable tbody');
