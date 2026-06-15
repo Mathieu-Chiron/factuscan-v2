@@ -178,6 +178,8 @@ html,body{overflow:hidden;}
 /* EXPORT */
 #screen-export{position:fixed;inset:0;background:#fff;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .2s;overflow-y:auto;z-index:30;}
 #screen-export.show{opacity:1;pointer-events:all;}
+#screen-invoice-edit{position:fixed;inset:0;background:#fff;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .2s;overflow-y:auto;z-index:30;}
+#screen-invoice-edit.show{opacity:1;pointer-events:all;}
 .exp-wrap{width:90vw;max-width:90vw;margin:0 auto;padding:2.5rem 2rem 4rem;}
 .exp-title{font-size:22px;font-weight:700;margin-bottom:4px;}
 .exp-sub{font-size:14px;color:var(--muted);margin-bottom:1.75rem;}
@@ -284,7 +286,8 @@ html,body{overflow:hidden;}
 
 <!-- ═══ UPLOAD ════════════════════════════════════ -->
 <div id="screen-upload" class="z-content">
-  <div style="position:fixed;top:16px;right:20px;">
+  <div style="position:fixed;top:16px;right:20px;display:flex;gap:8px;">
+    <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Editez vos factures</button>
     <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
   </div>
   <div class="dz-title">FactuScan V2</div>
@@ -321,7 +324,6 @@ html,body{overflow:hidden;}
       </div>
     </div>
     <div class="topbar-right">
-      <button class="btn btn-ghost btn-sm" id="btnClearSession" onclick="confirmClearSession()" style="display:none;">Quitter la session et effacer vos factures</button>
       <button class="btn btn-ghost btn-sm" id="btnSettings" style="display:none;" onclick="openModal()">Paramètres</button>
       <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
       <button class="btn btn-neutral btn-sm" id="btnExport" onclick="showExport()" style="display:none;">Exporter</button>
@@ -405,7 +407,8 @@ html,body{overflow:hidden;}
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.5rem;">
       <div><div class="exp-title">Mes factures</div><div class="exp-sub">Résumé des factures traitées.</div></div>
       <div style="display:flex;gap:8px;">
-        <button class="btn btn-primary btn-sm" onclick="navigate('/','upload')">+ Ajouter des factures</button>
+        <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Editez vos factures</button>
+        <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">+ Ajouter des factures</button>
         <button class="btn btn-neutral btn-sm" onclick="hideExport()">← Retour</button>
       </div>
     </div>
@@ -428,6 +431,31 @@ html,body{overflow:hidden;}
       <div class="exp-table-wrap" id="paytInvWrap" style="display:none;">
         <table class="exp-table" id="paytInvTable"><thead></thead><tbody></tbody></table>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ INVOICE EDIT ══════════════════════════════ -->
+<div id="screen-invoice-edit" class="z-content">
+  <div class="exp-wrap">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.5rem;">
+      <div>
+        <div class="exp-title">Factures à traiter</div>
+        <div class="exp-sub">Factures ouvertes chargées depuis votre compte PAYT.</div>
+        <p style="font-size:12px;color:var(--muted);margin-top:4px;">Seules les factures encore non soldées apparaissent sur cette page.</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-neutral btn-sm" onclick="navigate('/invoices','invoices')">Mes factures</button>
+        <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-processor','editor')">Ajoutez des factures</button>
+      </div>
+    </div>
+    <div id="paytEditStatus" style="font-size:13px;color:var(--muted);margin-bottom:10px;display:none;"></div>
+    <div class="exp-table-wrap" id="paytEditWrap" style="display:none;">
+      <table class="exp-table" id="paytEditTable"><thead></thead><tbody></tbody></table>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:1rem;flex-wrap:wrap;">
+      <button class="btn btn-primary" id="btnPushEdit" onclick="pushEditToPayt()" style="background:var(--navy);border-color:var(--navy);">Envoyer vers PAYT</button>
+      <span id="paytEditSummary" style="font-size:13px;color:var(--muted);"></span>
     </div>
   </div>
 </div>
@@ -1599,6 +1627,10 @@ function deleteSelected(){
 
 /* ── Searchable select (entreprise cible) ── */
 let paytAdministrations=[];
+let _paytInvoicesCache=null;
+let _paytEditRawInvoices=[];
+let _editState={}; // keyed by invoice_number: { status, amountPaid, paymentDate }
+let _paytEditPushResults={}; // keyed by invoice_number: { status: 'Payée'|'Clôturée' } after successful push
 let _openCselPanel=null;
 
 function openCsel(e,valEl){
@@ -1680,14 +1712,22 @@ function _showScreen(name){
       <span style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D91F2C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg><strong>${cloturees}</strong> clôturées</span>
       <span style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E07B00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M13 21V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v16"/><path d="M19 21V9a1 1 0 0 0-1-1h-5"/><path d="M9 11v.01"/></svg><strong>${ouvertes}</strong> ouvertes</span>
     </span>`;
+    document.getElementById('screen-invoice-edit').classList.remove('show');
     expSort={key:null,dir:'asc'};
     selectedInvoices.clear();
     updateSelCount();
     renderExpTable();
     document.getElementById('screen-export').classList.add('show');
     loadPaytInvoices();
+  } else if(name==='invoice-edit'){
+    document.getElementById('screen-export').classList.remove('show');
+    document.getElementById('screen-main').classList.remove('in');
+    document.getElementById('screen-upload').style.display='none';
+    document.getElementById('screen-invoice-edit').classList.add('show');
+    loadPaytInvoicesEdit();
   } else if(name==='editor'){
     document.getElementById('screen-export').classList.remove('show');
+    document.getElementById('screen-invoice-edit').classList.remove('show');
     document.getElementById('screen-main').classList.add('in');
     renderSidebar();updateBar();
     const curOk=S.cur>=0&&S.invoices[S.cur]&&sbEditable(S.invoices[S.cur]);
@@ -1695,6 +1735,7 @@ function _showScreen(name){
     else{const fi=S.invoices.findIndex(sbEditable);if(fi>=0) selectInv(fi);}
   } else {
     document.getElementById('screen-export').classList.remove('show');
+    document.getElementById('screen-invoice-edit').classList.remove('show');
     document.getElementById('screen-main').classList.remove('in');
     const su=document.getElementById('screen-upload');
     su.style.display='';setTimeout(()=>su.classList.remove('out'),10);
@@ -1935,11 +1976,213 @@ async function loadPaytInvoices(){
     if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.message||`HTTP ${res.status}`);}
     const {invoices=[]}=await res.json().catch(()=>({}));
     if(invoices.length>0) console.log('[PAYT] raw invoice[0]:', JSON.stringify(invoices[0], null, 2));
+    _paytInvoicesCache=invoices;
     statusEl.textContent=`${invoices.length} facture${invoices.length!==1?'s':''} trouvée${invoices.length!==1?'s':''} dans PAYT.`;
     renderPaytInvoicesTable(invoices);
     wrapEl.style.display='';
   }catch(e){
     statusEl.textContent=`Erreur : ${e.message}`;
+  }
+}
+
+async function loadPaytInvoicesEdit(){
+  const token=localStorage.getItem('paytToken');
+  if(!token) return;
+  const statusEl=document.getElementById('paytEditStatus');
+  const wrapEl=document.getElementById('paytEditWrap');
+  statusEl.textContent='Chargement…';statusEl.style.display='';
+  wrapEl.style.display='none';
+  try{
+    let invoices=_paytInvoicesCache;
+    if(!invoices){
+      const adminIds=paytAdministrations.map(a=>a.id);
+      const res=await fetch('/api/payt-invoices-get',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token,administration_ids:adminIds.length?adminIds:undefined}),
+      });
+      if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.message||`HTTP ${res.status}`);}
+      const data=await res.json().catch(()=>({}));
+      invoices=data.invoices||[];
+      _paytInvoicesCache=invoices;
+    }
+    // Keep only "En cours" invoices
+    _paytEditRawInvoices=invoices.filter(inv=>
+      parseFloat(inv.total_amount)>=0 && parseFloat(inv.open_amount||inv.book_open_amount)>0
+    );
+    // Init edit state
+    _editState={};
+    _paytEditPushResults={};
+    const today=new Date().toISOString().slice(0,10);
+    _paytEditRawInvoices.forEach(inv=>{
+      const k=(inv.administration_id||inv._administration_id||'')+'__'+inv.invoice_number;
+      _editState[k]={status:'En cours',amountPaid:'',paymentDate:today};
+    });
+    statusEl.textContent=`${_paytEditRawInvoices.length} facture${_paytEditRawInvoices.length!==1?'s':''} ouverte${_paytEditRawInvoices.length!==1?'s':''}.`;
+    renderPaytEditTable();
+    wrapEl.style.display='';
+  }catch(e){
+    statusEl.textContent=`Erreur : ${e.message}`;
+  }
+}
+
+function renderPaytEditTable(){
+  const adminMap=Object.fromEntries(paytAdministrations.map(a=>[a.id,a.name]));
+  const thead=document.querySelector('#paytEditTable thead');
+  const tbody=document.querySelector('#paytEditTable tbody');
+  const today=new Date().toISOString().slice(0,10);
+  thead.innerHTML=`<tr>
+    <th>N° facture</th><th>Débiteur</th><th>Entreprise</th>
+    <th style="text-align:right">Montant TTC</th><th style="text-align:right">Ouvert</th>
+    <th>Nouveau statut</th><th style="text-align:right">Montant payé (€)</th><th>Date paiement</th>
+    <th>Résultat</th>
+  </tr>`;
+  tbody.innerHTML='';
+  _paytEditRawInvoices.forEach(inv=>{
+    const adminId=inv.administration_id||inv._administration_id||'';
+    const k=adminId+'__'+inv.invoice_number;
+    const openAmt=parseFloat(inv.book_open_amount||inv.open_amount)||0;
+    const totalAmt=parseFloat(inv.book_total_amount||inv.total_amount)||0;
+    const state=_editState[k]||{status:'En cours',amountPaid:'',paymentDate:today};
+    const changed=state.status!=='En cours';
+
+    const pushed=_paytEditPushResults[k];
+    const locked=pushed&&(pushed.status==='Payée'||pushed.status==='Clôturée');
+
+    const tr=document.createElement('tr');
+    if(locked&&pushed.status==='Payée') tr.style.background='rgba(50,192,130,0.10)';
+    else if(locked&&pushed.status==='Clôturée') tr.style.background='rgba(245,166,35,0.12)';
+    else if(changed) tr.style.background='rgba(59,130,246,0.07)';
+
+    // readonly cells
+    const tdNum=document.createElement('td'); tdNum.style.cssText='white-space:nowrap;font-weight:600;'; tdNum.textContent=inv.invoice_number;
+    const tdDeb=document.createElement('td'); tdDeb.textContent=inv.debtor?.name||inv.debtor_name||inv.debtor_number||'—';
+    const tdAdm=document.createElement('td'); tdAdm.textContent=adminMap[inv.administration_id||inv._administration_id]||'—';
+    const tdTot=document.createElement('td'); tdTot.style.cssText='text-align:right;font-variant-numeric:tabular-nums;'; tdTot.textContent=totalAmt.toFixed(2);
+    const tdOpn=document.createElement('td'); tdOpn.style.cssText='text-align:right;font-variant-numeric:tabular-nums;'; tdOpn.textContent=openAmt.toFixed(2);
+
+    const tdSel=document.createElement('td');
+    const tdAmt=document.createElement('td'); tdAmt.style.textAlign='right';
+    const tdDate=document.createElement('td');
+
+    if(locked){
+      // Frozen row — display only, no controls
+      const badge=document.createElement('span');
+      badge.textContent=pushed.status;
+      badge.style.cssText=`font-size:12px;font-weight:600;color:${pushed.status==='Payée'?'#085041':'#8a5a00'};`;
+      tdSel.appendChild(badge);
+      tdAmt.textContent=state.amountPaid?parseFloat(state.amountPaid).toFixed(2):'—';
+      tdDate.textContent=state.paymentDate||'—';
+    }else{
+      // status select
+      const sel=document.createElement('select');
+      sel.className='form-inp'; sel.style.cssText='font-size:12px;padding:4px 6px;min-width:110px;';
+      ['En cours','Payée','Clôturée'].forEach(opt=>{
+        const o=document.createElement('option'); o.value=opt; o.textContent=opt;
+        if(state.status===opt) o.selected=true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change',()=>{
+        if(!_editState[k]) return;
+        _editState[k].status=sel.value;
+        if(sel.value==='Payée'||sel.value==='Clôturée') _editState[k].amountPaid=String(openAmt);
+        else _editState[k].amountPaid='';
+        renderPaytEditTable();
+      });
+      tdSel.appendChild(sel);
+
+      // amount paid input
+      const inp=document.createElement('input'); inp.type='number'; inp.min='0'; inp.step='0.01';
+      inp.className='form-inp'; inp.style.cssText='font-size:12px;padding:4px 6px;width:100px;text-align:right;';
+      inp.value=state.amountPaid; inp.placeholder=openAmt.toFixed(2);
+      inp.addEventListener('change',()=>{ if(_editState[k]) _editState[k].amountPaid=inp.value; });
+      tdAmt.appendChild(inp);
+
+      // payment date input
+      const dateInp=document.createElement('input'); dateInp.type='date';
+      dateInp.className='form-inp'; dateInp.style.cssText='font-size:12px;padding:4px 6px;';
+      dateInp.value=state.paymentDate||today;
+      dateInp.addEventListener('change',()=>{ if(_editState[k]) _editState[k].paymentDate=dateInp.value; });
+      tdDate.appendChild(dateInp);
+    }
+
+    // result cell
+    const tdRes=document.createElement('td'); tdRes.dataset.result=k; tdRes.style.cssText='font-size:11px;color:var(--muted);'; tdRes.textContent='—';
+
+    [tdNum,tdDeb,tdAdm,tdTot,tdOpn,tdSel,tdAmt,tdDate,tdRes].forEach(td=>tr.appendChild(td));
+    tbody.appendChild(tr);
+  });
+}
+
+async function pushEditToPayt(){
+  const token=localStorage.getItem('paytToken');
+  if(!token){alert('Token PAYT manquant.');return;}
+  const updates=_paytEditRawInvoices
+    .filter(inv=>{
+      const k=(inv.administration_id||inv._administration_id||'')+'__'+inv.invoice_number;
+      return _editState[k]?.status!=='En cours';
+    })
+    .map(inv=>{
+      const k=(inv.administration_id||inv._administration_id||'')+'__'+inv.invoice_number;
+      const s=_editState[k];
+      return{
+        _key:              k,
+        administration_id: inv.administration_id||inv._administration_id,
+        invoice_number:    inv.invoice_number,
+        invoice_identifier:inv.invoice_identifier||undefined,
+        debtor_number:     inv.debtor_number||inv.debtor?.number||'',
+        invoice_date:      inv.invoice_date||'',
+        due_date:          inv.due_date||'',
+        total_amount:      String(parseFloat(inv.book_total_amount||inv.total_amount)||0),
+        open_amount:       String(parseFloat(inv.book_open_amount||inv.open_amount)||0),
+        currency_code:     inv.currency_code||'EUR',
+        new_status:        s.status,
+        amount_paid:       s.amountPaid||'0',
+        payment_date:      s.paymentDate||new Date().toISOString().slice(0,10),
+      };
+    });
+  if(!updates.length){alert('Aucune modification à envoyer.');return;}
+  const btn=document.getElementById('btnPushEdit');
+  btn.disabled=true;btn.textContent='Envoi en cours…';
+  try{
+    const res=await fetch('/api/payt-invoices-update',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token,updates}),
+    });
+    const data=await res.json().catch(()=>({}));
+    const results=data.results||{};
+    let ok=0,ko=0;
+    updates.forEach(u=>{
+      const r=results[u.invoice_number]||{};
+      if(r.success){
+        ok++;
+        if(u.new_status==='Payée'||u.new_status==='Clôturée'){
+          _paytEditPushResults[u._key]={status:u.new_status};
+        }
+      }else{
+        ko++;
+      }
+    });
+    // Re-render to apply locked/colored rows
+    renderPaytEditTable();
+    // Then write result messages (table was just re-rendered)
+    updates.forEach(u=>{
+      const r=results[u.invoice_number]||{};
+      const el=document.querySelector(`[data-result="${CSS.escape(u._key)}"]`);
+      if(r.success){
+        if(el) el.innerHTML=`<span style="color:var(--teal);font-weight:600;">✓ OK${r.credit_note?` (${esc(r.credit_note)})`:''}${r.warnings?.length?` ⚠ ${esc(r.warnings[0])}`:''}`;
+      }else{
+        if(el) el.innerHTML=`<span style="color:var(--red);">✗ ${esc((r.errors||[]).join(', ')||'Erreur')}</span>`;
+      }
+    });
+    document.getElementById('paytEditSummary').textContent=`${ok} envoyée${ok!==1?'s':''} avec succès${ko?`, ${ko} erreur${ko!==1?'s':''}`:''}.`;
+    // Invalidate cache so /invoices reloads fresh data
+    _paytInvoicesCache=null;
+  }catch(e){
+    document.getElementById('paytEditSummary').textContent=`Erreur réseau : ${e.message}`;
+  }finally{
+    btn.disabled=false;btn.textContent='Envoyer vers PAYT';
   }
 }
 
@@ -2271,7 +2514,7 @@ async function autoRestore(){
         pushStatus:d.pushStatus||null,pushNote:d.pushNote||null,uploadDate:d.uploadDate||null,fromRestore:true});
     });
     // Aller directement à l'écran /invoices, sauf si l'utilisateur a déjà navigué ailleurs
-    const userNavigated=document.getElementById('screen-main').classList.contains('in')||document.getElementById('screen-export').classList.contains('show');
+    const userNavigated=document.getElementById('screen-main').classList.contains('in')||document.getElementById('screen-export').classList.contains('show')||document.getElementById('screen-invoice-edit').classList.contains('show');
     if(userNavigated) return;
     document.getElementById('screen-upload').style.display='none';
     navigate('/invoices','invoices');
