@@ -123,6 +123,7 @@ export default async function handler(req, res) {
         name:               inv.debtor_name,
         debtor_identifier:  inv.debtor_identifier || inv.debtor_number,
         contact_identifier: inv.debtor_identifier || inv.debtor_number,
+        ...(inv.administration_name && { category:     inv.administration_name }),
         ...(inv.debtor_country_code && { country_code: inv.debtor_country_code }),
         ...(inv.debtor_vat_number   && { vat_number:   inv.debtor_vat_number }),
         ...(inv.debtor_is_company != null && { is_company: inv.debtor_is_company }),
