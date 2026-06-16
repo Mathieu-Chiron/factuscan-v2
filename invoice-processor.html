@@ -2103,7 +2103,8 @@ function renderPaytEditTable(){
       sel.addEventListener('change',()=>{
         if(!_editState[k]) return;
         _editState[k].status=sel.value;
-        if(sel.value==='Payée'||sel.value==='Clôturée') _editState[k].amountPaid=String(openAmt);
+        if(sel.value==='Payée') _editState[k].amountPaid=String(openAmt);
+        else if(sel.value==='Clôturée') _editState[k].amountPaid='0';
         else _editState[k].amountPaid='';
         renderPaytEditTable();
       });
