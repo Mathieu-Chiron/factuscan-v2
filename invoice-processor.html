@@ -2318,28 +2318,29 @@ async function pushAndExport(){
 
   const invoicesPayload=toCreate.map(inv=>{
     const debtor_number=computeDebtorCode(inv.data)||generateDebtorCode(inv.data)||'UNKNOWN';
-    const total=parseFloat(inv.data.invoice_total_amount_inc_vat)||0;
-    const open=parseFloat(inv.data.invoice_open_amount_inc_vat)||0;
     return{
-      administration_id:inv.targetCompany.id,
-      invoice_number:inv.data.invoice_number,
+      administration_id:         inv.targetCompany.id,
+      invoice_number:            inv.data.invoice_number,
+      invoice_date:              inv.data.invoice_date,
+      invoice_due_date:          inv.data.invoice_due_date,
+      invoice_total_amount_inc_vat: String(parseFloat(inv.data.invoice_total_amount_inc_vat)||0),
+      invoice_open_amount_inc_vat:  String(parseFloat(inv.data.invoice_open_amount_inc_vat)||0),
+      currency_code:             'EUR',
       debtor_number,
-      invoice_date:inv.data.invoice_date,
-      due_date:inv.data.invoice_due_date,
-      total_amount:String(total),
-      open_amount:String(open),
-      currency_code:'EUR',
-      debtor_lastname:inv.data.debtor_lastname||undefined,
-      debtor_post_street_1:inv.data.debtor_post_street_1||undefined,
-      debtor_post_postalcode:inv.data.debtor_post_postalcode?String(inv.data.debtor_post_postalcode):undefined,
-      debtor_post_city:inv.data.debtor_post_city||undefined,
-      debtor_post_country_code:inv.data.debtor_post_country_code||'FR',
-      debtor_email:inv.data.debtor_email||undefined,
+      debtor_name:               inv.data.debtor_lastname||inv.data.debtor_name||'',
+      debtor_identifier:         debtor_number,
+      debtor_lastname:           inv.data.debtor_lastname||undefined,
+      debtor_post_street_1:      inv.data.debtor_post_street_1||undefined,
+      debtor_post_postalcode:    inv.data.debtor_post_postalcode?String(inv.data.debtor_post_postalcode):undefined,
+      debtor_post_city:          inv.data.debtor_post_city||undefined,
+      debtor_country_code:       inv.data.debtor_post_country_code||'FR',
+      debtor_email:              inv.data.debtor_email||undefined,
+      debtor_vat_number:         inv.data.debtor_vat_number||undefined,
     };
   });
 
   try{
-    const res=await fetch('/api/payt-invoices-create',{
+    const res=await fetch('/api/payt-push',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({token,invoices:invoicesPayload}),
     });
@@ -2354,7 +2355,7 @@ async function pushAndExport(){
       const r=results[invNum];
       console.log(`[pushAndExport] facture ${invNum}:`, r);
       if(r?.success){inv.pushStatus='success';inv.paytStatus='En cours';ok++;}
-      else{inv.pushStatus='error';inv.pushNote=r?.error||'Erreur inconnue';err++;}
+      else{inv.pushStatus='error';inv.pushNote=(r?.errors||[]).join(', ')||'Erreur inconnue';err++;}
     });
     saveDataset();
     console.log('[pushAndExport] ok='+ok+' err='+err);
