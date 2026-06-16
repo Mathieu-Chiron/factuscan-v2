@@ -56,6 +56,9 @@ html,body{overflow:hidden;}
 .topbar-left{display:flex;align-items:center;gap:14px;}
 .prog-wrap{display:flex;align-items:center;gap:7px;font-size:12px;color:rgba(255,255,255,0.6);}
 .topbar-right{display:flex;align-items:center;gap:7px;}
+.admin-badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid;}
+.admin-badge.ok{color:#16a34a;background:rgba(22,163,74,0.08);border-color:rgba(22,163,74,0.30);}
+.admin-badge.err{color:var(--red);background:var(--red-bg);border-color:var(--red-border);}
 
 /* LAYOUT */
 .layout{flex:1;display:flex;overflow:hidden;position:relative;}
@@ -319,6 +322,7 @@ html,body{overflow:hidden;}
   <div class="topbar">
     <div class="topbar-left">
       <span class="topbar-title">Factures</span>
+      <span id="adminBadge" style="display:none;"></span>
       <div class="prog-wrap" id="progWrap" style="display:none;">
         <div class="progress-bar"><div class="progress-bar__fill" id="progFill" style="width:0%"></div></div>
         <span id="progTxt">0 / 0</span>
@@ -2441,14 +2445,31 @@ function toB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onlo
 // Proxy pour blobs privés — le navigateur ne peut pas fetch directement l'URL signée
 function blobProxyUrl(url){return `/api/blob-get?url=${encodeURIComponent(url)}`;}
 if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+function updateAdminBadge(ok, label){
+  const el = document.getElementById('adminBadge');
+  if(!el) return;
+  if(ok){
+    el.className = 'admin-badge ok';
+    el.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#16a34a"/><path d="M3.5 6l1.8 1.8L8.5 4.5" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>${esc(label)}`;
+  } else {
+    el.className = 'admin-badge err';
+    el.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#D91F2C"/><path d="M4 4l4 4M8 4l-4 4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>${esc(label)}`;
+  }
+  el.style.display = '';
+}
+
 async function loadCompanies(){
   const token = localStorage.getItem('paytToken');
-  if(!token) return;
+  if(!token){ updateAdminBadge(false, 'Token non configuré'); return; }
   try {
     const res = await fetch('/api/payt-administrations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
     const data = await res.json().catch(()=>({}));
-    if(!res.ok || !data.administrations) return;
+    if(!res.ok || !data.administrations){ updateAdminBadge(false, 'Token invalide'); return; }
     paytAdministrations = [...data.administrations].sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+    const label = paytAdministrations.length === 1
+      ? paytAdministrations[0].name
+      : `${paytAdministrations.length} organisations`;
+    updateAdminBadge(true, label);
     const ol = document.getElementById('companiesList');
     ol.innerHTML = paytAdministrations.map(a=>`<li>${esc(a.name)}${a.city ? ' — '+esc(a.city) : ''}</li>`).join('');
     if(paytAdministrations.length===1){
@@ -2457,7 +2478,7 @@ async function loadCompanies(){
       saveDataset();
     }
     if(typeof renderExpTable==='function') renderExpTable();
-  } catch(e){}
+  } catch(e){ updateAdminBadge(false, 'Erreur de connexion'); }
 }
 
 async function loadUserSettings(){
