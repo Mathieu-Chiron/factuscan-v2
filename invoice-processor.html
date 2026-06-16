@@ -2344,12 +2344,15 @@ async function pushAndExport(){
       body:JSON.stringify({token,invoices:invoicesPayload}),
     });
     const data=await res.json().catch(()=>({}));
+    console.log('[pushAndExport] payload envoyé:', JSON.stringify(invoicesPayload));
+    console.log('[pushAndExport] réponse PAYT:', JSON.stringify(data));
     const results=data?.results||{};
 
     let ok=0,err=0;
     toCreate.forEach(inv=>{
       const invNum=inv.data.invoice_number;
       const r=results[invNum];
+      console.log(`[pushAndExport] facture ${invNum}:`, r);
       if(r?.success){inv.pushStatus='success';inv.paytStatus='En cours';ok++;}
       else{inv.pushStatus='error';inv.pushNote=r?.error||'Erreur inconnue';err++;}
     });
