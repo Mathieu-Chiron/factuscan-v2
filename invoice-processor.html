@@ -2472,8 +2472,6 @@ async function loadCompanies(){
       ? paytAdministrations[0].name
       : `${paytAdministrations.length} organisations`;
     updateAdminBadge(true, label);
-    const ol = document.getElementById('companiesList');
-    ol.innerHTML = paytAdministrations.map(a=>`<li>${esc(a.name)}${a.city ? ' — '+esc(a.city) : ''}</li>`).join('');
     if(paytAdministrations.length===1){
       const only=paytAdministrations[0];
       S.invoices.forEach(inv=>{ if(!inv.targetCompany) inv.targetCompany={id:only.id,name:only.name}; });
