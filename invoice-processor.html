@@ -56,7 +56,7 @@ html,body{overflow:hidden;}
 .topbar-left{display:flex;align-items:center;gap:14px;}
 .prog-wrap{display:flex;align-items:center;gap:7px;font-size:12px;color:rgba(255,255,255,0.6);}
 .topbar-right{display:flex;align-items:center;gap:7px;}
-.admin-badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid;}
+.admin-badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid;margin-bottom:10px;}
 .admin-badge.ok{color:#16a34a;background:rgba(22,163,74,0.08);border-color:rgba(22,163,74,0.30);}
 .admin-badge.err{color:var(--red);background:var(--red-bg);border-color:var(--red-border);}
 
@@ -267,8 +267,6 @@ html,body{overflow:hidden;}
 <div class="blob blob-2"></div>
 <div class="blob blob-3"></div>
 
-<!-- badge admin global -->
-<span id="adminBadge" style="display:none;position:fixed;top:14px;left:16px;z-index:300;"></span>
 
 <!-- ═══ AUTH ══════════════════════════════════════ -->
 <div id="screen-auth">
@@ -292,7 +290,8 @@ html,body{overflow:hidden;}
 
 <!-- ═══ UPLOAD ════════════════════════════════════ -->
 <div id="screen-upload" class="z-content">
-  <div style="position:fixed;top:16px;right:20px;display:flex;gap:8px;">
+  <div style="position:fixed;top:16px;right:20px;display:flex;gap:8px;align-items:center;">
+    <span class="admin-badge-slot" style="display:none;"></span>
     <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Editez vos factures</button>
     <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
     <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
@@ -412,7 +411,8 @@ html,body{overflow:hidden;}
   <div class="exp-wrap">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.5rem;">
       <div><div class="exp-title">Mes factures</div><div class="exp-sub">Résumé des factures traitées.</div></div>
-      <div style="display:flex;gap:8px;">
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="admin-badge-slot" style="display:none;"></span>
         <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Editez vos factures</button>
         <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">+ Ajouter des factures</button>
         <button class="btn btn-neutral btn-sm" onclick="hideExport()">← Retour</button>
@@ -452,6 +452,7 @@ html,body{overflow:hidden;}
         <p style="font-size:12px;color:var(--muted);margin-top:4px;">Seules les factures encore non soldées apparaissent sur cette page.</p>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
+        <span class="admin-badge-slot" style="display:none;"></span>
         <button class="btn btn-neutral btn-sm" onclick="navigate('/invoices','invoices')">Mes factures</button>
         <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-processor','editor')">Ajoutez des factures</button>
         <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
@@ -2345,20 +2346,16 @@ async function pushAndExport(){
       body:JSON.stringify({token,invoices:invoicesPayload}),
     });
     const data=await res.json().catch(()=>({}));
-    console.log('[pushAndExport] payload envoyé:', JSON.stringify(invoicesPayload));
-    console.log('[pushAndExport] réponse PAYT:', JSON.stringify(data));
     const results=data?.results||{};
 
     let ok=0,err=0;
     toCreate.forEach(inv=>{
       const invNum=inv.data.invoice_number;
       const r=results[invNum];
-      console.log(`[pushAndExport] facture ${invNum}:`, r);
       if(r?.success){inv.pushStatus='success';inv.paytStatus='En cours';ok++;}
       else{inv.pushStatus='error';inv.pushNote=(r?.errors||[]).join(', ')||'Erreur inconnue';err++;}
     });
     saveDataset();
-    console.log('[pushAndExport] ok='+ok+' err='+err);
   }catch(e){
     toCreate.forEach(inv=>{inv.pushStatus='error';inv.pushNote='Erreur réseau';});
     console.error('[pushAndExport]',e);
@@ -2452,16 +2449,15 @@ function toB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onlo
 function blobProxyUrl(url){return `/api/blob-get?url=${encodeURIComponent(url)}`;}
 if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 function updateAdminBadge(ok, label){
-  const el = document.getElementById('adminBadge');
-  if(!el) return;
-  if(ok){
-    el.className = 'admin-badge ok';
-    el.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#16a34a"/><path d="M3.5 6l1.8 1.8L8.5 4.5" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>${esc(label)}`;
-  } else {
-    el.className = 'admin-badge err';
-    el.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#D91F2C"/><path d="M4 4l4 4M8 4l-4 4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>${esc(label)}`;
-  }
-  el.style.display = '';
+  const icon = ok
+    ? `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#16a34a"/><path d="M3.5 6l1.8 1.8L8.5 4.5" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+    : `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#D91F2C"/><path d="M4 4l4 4M8 4l-4 4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+  const cls = ok ? 'admin-badge ok' : 'admin-badge err';
+  document.querySelectorAll('.admin-badge-slot').forEach(el => {
+    el.className = cls;
+    el.innerHTML = `${esc(label)} ${icon}`;
+    el.style.display = '';
+  });
 }
 
 async function loadCompanies(){
