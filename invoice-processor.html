@@ -289,6 +289,7 @@ html,body{overflow:hidden;}
   <div style="position:fixed;top:16px;right:20px;display:flex;gap:8px;">
     <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Editez vos factures</button>
     <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
+    <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
   </div>
   <div class="dz-title">FactuScan V2</div>
   <div class="dz-sub">Uploadez vos factures, vérifiez les données extraites, obtenez les fichiers prêts à importer.</div>
@@ -327,7 +328,7 @@ html,body{overflow:hidden;}
       <button class="btn btn-ghost btn-sm" id="btnSettings" style="display:none;" onclick="openModal()">Paramètres</button>
       <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
       <button class="btn btn-primary btn-sm" id="btnExtract" onclick="startExtraction()" disabled>Extraire les données</button>
-      <button class="btn btn-ghost btn-sm" onclick="signOut()" title="Se déconnecter" style="opacity:.6;">↩</button>
+      <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
     </div>
   </div>
 
@@ -409,6 +410,7 @@ html,body{overflow:hidden;}
         <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Editez vos factures</button>
         <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">+ Ajouter des factures</button>
         <button class="btn btn-neutral btn-sm" onclick="hideExport()">← Retour</button>
+        <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
       </div>
     </div>
     <div id="expStats" style="display:none;"></div>
@@ -446,6 +448,7 @@ html,body{overflow:hidden;}
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="btn btn-neutral btn-sm" onclick="navigate('/invoices','invoices')">Mes factures</button>
         <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-processor','editor')">Ajoutez des factures</button>
+        <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
       </div>
     </div>
     <div id="paytEditStatus" style="font-size:13px;color:var(--muted);margin-bottom:10px;display:none;"></div>
