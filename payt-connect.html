@@ -57,6 +57,32 @@ html,body{height:100%;overflow:hidden;}
 
 
 <script>
+let _clerkInst = null;
+
+async function getAuthToken() {
+  try { return (await _clerkInst?.session?.getToken()) || null; } catch { return null; }
+}
+
+async function initClerk() {
+  try {
+    const { clerkPublishableKey } = await fetch('/api/config').then(r => r.json());
+    if (!clerkPublishableKey) return;
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js';
+      s.crossOrigin = 'anonymous';
+      s.dataset.clerkPublishableKey = clerkPublishableKey;
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+    _clerkInst = window.Clerk;
+    await _clerkInst.load();
+    if (!_clerkInst.user) {
+      await _clerkInst.redirectToSignIn({ redirectUrl: window.location.href });
+    }
+  } catch(e) { console.error('Clerk init error:', e); }
+}
+
 async function handleConnect(e) {
   e.preventDefault();
   const token = document.getElementById('inputToken').value.trim();
@@ -68,6 +94,7 @@ async function handleConnect(e) {
   btn.innerHTML = '<span class="spinner"></span> Vérification…';
 
   try {
+    // 1. Validate token against PAYT
     const res = await fetch('/api/payt-administrations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -85,9 +112,19 @@ async function handleConnect(e) {
       return;
     }
 
-    // Token valid — store and redirect to main app
+    // 2. Save token to DB (authenticated)
+    const authToken = await getAuthToken();
+    if (authToken) {
+      await fetch('/api/user-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ payt_token: token }),
+      });
+    }
+
+    // 3. Store locally and redirect to main app
     localStorage.setItem('paytToken', token);
-    window.location.href = '/invoice-processor.html';
+    window.location.href = '/invoice-processor';
 
   } catch (err) {
     errorMsg.textContent = "Impossible de joindre le serveur. Vérifiez votre connexion.";
@@ -96,6 +133,8 @@ async function handleConnect(e) {
     btn.textContent = 'Se connecter';
   }
 }
+
+initClerk();
 </script>
 </body>
 </html>

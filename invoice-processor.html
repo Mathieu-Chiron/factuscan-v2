@@ -2472,7 +2472,7 @@ async function loadUserSettings(){
       await loadCompanies();
       await autoRestore();
     } else {
-      document.getElementById('screen-payt-setup').classList.remove('hidden');
+      window.location.href = '/payt-connect';
     }
   }catch(e){ console.error('loadUserSettings error:', e); }
 }

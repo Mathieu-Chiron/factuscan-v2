@@ -3,6 +3,7 @@
     { "source": "/", "destination": "/invoice-processor.html" },
     { "source": "/invoice-processor", "destination": "/invoice-processor.html" },
     { "source": "/invoices", "destination": "/invoice-processor.html" },
+    { "source": "/payt-connect", "destination": "/payt-connect.html" },
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/((?!api/).*)", "destination": "/invoice-processor.html" }
   ],
