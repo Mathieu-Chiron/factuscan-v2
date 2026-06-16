@@ -51,10 +51,34 @@ export default async function handler(req, res) {
   });
 
   for (const [adminId, batch] of Object.entries(byAdmin)) {
+    // Step 1: create/upsert debtors before invoices
+    const debtorsPayload = batch.map(inv => {
+      const d = { debtor_number: inv.debtor_number };
+      if (inv.debtor_lastname)          d.debtor_lastname          = inv.debtor_lastname;
+      if (inv.debtor_post_street_1)     d.debtor_post_street_1     = inv.debtor_post_street_1;
+      if (inv.debtor_post_postalcode)   d.debtor_post_postalcode   = String(inv.debtor_post_postalcode);
+      if (inv.debtor_post_city)         d.debtor_post_city         = inv.debtor_post_city;
+      if (inv.debtor_post_country_code) d.debtor_post_country_code = inv.debtor_post_country_code;
+      if (inv.debtor_email)             d.debtor_email             = inv.debtor_email;
+      return d;
+    });
+    try {
+      console.log(`[payt-invoices-create] POST /v1/debtors admin=${adminId} count=${debtorsPayload.length}`);
+      const dr = await fetchWithRetry(`${PAYT_BASE}/v1/debtors`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ administration_id: adminId, debtors: debtorsPayload }),
+      });
+      const dd = await dr.json().catch(() => ({}));
+      console.log(`[payt-invoices-create] debtors response ${dr.status}`, JSON.stringify(dd));
+    } catch (e) {
+      console.error(`[payt-invoices-create] debtors error`, e.message);
+    }
+
+    // Step 2: create invoices
     const payload = batch.map(inv => {
       const total = String(parseFloat(inv.total_amount) || 0);
       const open  = String(parseFloat(inv.open_amount)  || 0);
-      const p = {
+      return {
         invoice_number:    inv.invoice_number,
         debtor_number:     inv.debtor_number,
         invoice_date:      inv.invoice_date,
@@ -65,14 +89,6 @@ export default async function handler(req, res) {
         amount_open:       open,
         currency_code:     inv.currency_code || 'EUR',
       };
-      // Optional debtor fields — send only if present
-      if (inv.debtor_lastname)            p.debtor_lastname            = inv.debtor_lastname;
-      if (inv.debtor_post_street_1)       p.debtor_post_street_1       = inv.debtor_post_street_1;
-      if (inv.debtor_post_postalcode)     p.debtor_post_postalcode     = String(inv.debtor_post_postalcode);
-      if (inv.debtor_post_city)           p.debtor_post_city           = inv.debtor_post_city;
-      if (inv.debtor_post_country_code)   p.debtor_post_country_code   = inv.debtor_post_country_code;
-      if (inv.debtor_email)               p.debtor_email               = inv.debtor_email;
-      return p;
     });
 
     try {
