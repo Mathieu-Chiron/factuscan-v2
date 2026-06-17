@@ -413,7 +413,13 @@ html,body{overflow:hidden;}
 <div id="screen-export" class="z-content">
   <div class="exp-wrap">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.5rem;">
-      <div><div class="exp-title">Mes factures</div><div class="exp-sub">Résumé des factures traitées.</div></div>
+      <div>
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;">
+          <span id="adminBadgeNameExport" style="font-size:12px;font-weight:600;color:var(--navy);"></span>
+          <span id="adminBadgeStatusExport"></span>
+        </div>
+        <div class="exp-title">Mes factures</div><div class="exp-sub">Résumé des factures traitées.</div>
+      </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="btn btn-neutral btn-sm" onclick="hideExport()">← Retour</button>
         <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">Ajoutez des factures</button>
@@ -2502,7 +2508,7 @@ function updateAdminBadge(ok, label){
   const icon = ok
     ? `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#16a34a"/><path d="M3.5 6l1.8 1.8L8.5 4.5" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`
     : `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#D91F2C"/><path d="M4 4l4 4M8 4l-4 4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>`;
-  [['adminBadgeName','adminBadgeStatus'],['adminBadgeNameUpload','adminBadgeStatusUpload']].forEach(([nId,sId])=>{
+  [['adminBadgeName','adminBadgeStatus'],['adminBadgeNameUpload','adminBadgeStatusUpload'],['adminBadgeNameExport','adminBadgeStatusExport']].forEach(([nId,sId])=>{
     const n=document.getElementById(nId); const s=document.getElementById(sId);
     if(n) n.textContent=label;
     if(s) s.innerHTML=icon;
