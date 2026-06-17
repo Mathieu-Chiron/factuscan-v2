@@ -1,6 +1,7 @@
 {
   "rewrites": [
     { "source": "/", "destination": "/invoice-processor.html" },
+    { "source": "/login", "destination": "/invoice-processor.html" },
     { "source": "/invoice-processor", "destination": "/invoice-processor.html" },
     { "source": "/invoices", "destination": "/invoice-processor.html" },
     { "source": "/payt-connect", "destination": "/payt-connect.html" },

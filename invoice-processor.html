@@ -799,8 +799,15 @@ async function initClerk() {
       document.getElementById('screen-auth').classList.add('hidden');
       await loadUserSettings();
     } else {
-      // Redirect to Clerk's hosted sign-in page (no CSP issues)
-      await _clerkInst.redirectToSignIn({ redirectUrl: window.location.href });
+      // Mount embedded sign-in form directly in the page
+      _clerkInst.mountSignIn(document.getElementById('clerk-sign-in'));
+      _clerkInst.addListener(async ({ user }) => {
+        if (user) {
+          USER_ID = user.id;
+          document.getElementById('screen-auth').classList.add('hidden');
+          await loadUserSettings();
+        }
+      });
     }
   } catch(e) {
     console.error('Clerk init error:', e);
