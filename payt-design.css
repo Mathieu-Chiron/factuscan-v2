@@ -136,7 +136,7 @@ html, body {
 }
 
 body {
-  background: var(--bg-gradient);
+  background: #ffffff;
   color: var(--navy);
   font-size: var(--text-base);
   line-height: 1.5;
@@ -174,13 +174,7 @@ input:focus, textarea:focus, select:focus {
   100% { transform: translate(0, 0) scale(1); }
 }
 
-.blob {
-  position: fixed;
-  border-radius: 50%;
-  pointer-events: none;
-  filter: blur(40px);
-  z-index: 0;
-}
+.blob { display: none; }
 .blob-1 {
   top: -15%; left: -10%;
   width: 600px; height: 600px;
