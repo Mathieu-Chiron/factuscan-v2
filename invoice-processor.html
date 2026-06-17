@@ -37,7 +37,7 @@ html,body { overflow:hidden; }
 /* AUTH */
 #screen-auth{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f0f2f5;z-index:200;gap:24px;}
 #screen-auth.hidden{display:none;}
-.auth-logo{height:38px;object-fit:contain;}
+.auth-logo{height:76px;object-fit:contain;}
 .auth-h1{font-size:26px;font-weight:800;color:#122C43;letter-spacing:-0.02em;text-align:center;}
 #clerk-sign-in{width:min(400px,92vw);}
 
@@ -332,8 +332,8 @@ html,body { overflow:hidden; }
 
 <!-- ═══ AUTH ══════════════════════════════════════ -->
 <div id="screen-auth">
-  <img src="/payt_logo.png" alt="PAYT" class="auth-logo"/>
-  <h1 class="auth-h1">Module Recouvrement.</h1>
+  <img src="/Payt_Logo_blauw_rood_RGB.svg" alt="Payt Agences" class="auth-logo"/>
+  <h1 class="auth-h1">Payt Agences&nbsp;: Le module dédié au recouvrement.</h1>
   <div id="clerk-sign-in"></div>
 </div>
 
@@ -352,8 +352,7 @@ html,body { overflow:hidden; }
 
 <!-- ═══ UPLOAD ════════════════════════════════════ -->
 <div id="screen-upload" class="z-content">
-  <img src="/Payt_Logo_blauw_rood_RGB.svg" alt="Payt" style="height:48px;object-fit:contain;margin-bottom:12px;"/>
-  <h1 class="dz-title" style="font-size:22px;font-weight:800;color:#122C43;text-align:center;margin-bottom:6px;">Payt Agences&nbsp;: Le module dédié au recouvrement.</h1>
+  <img src="/Payt_Logo_blauw_rood_RGB.svg" alt="Payt" style="height:96px;object-fit:contain;margin-bottom:20px;"/>
   <div class="dropzone" id="dropzone"
     onclick="document.getElementById('fi1').click()"
     ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
