@@ -1660,6 +1660,8 @@ function deleteSelected(){
 let paytAdministrations=[];
 let _paytInvoicesCache=null;
 let _paytEditRawInvoices=[];
+let _paytInvSortCol=null,_paytInvSortDir='asc';
+let _paytEditSortCol=null,_paytEditSortDir='asc';
 let _editState={}; // keyed by invoice_number: { status, amountPaid, paymentDate }
 let _paytEditPushResults={}; // keyed by invoice_number: { status: 'Payée'|'Clôturée' } after successful push
 let _openCselPanel=null;
@@ -2061,14 +2063,35 @@ function renderPaytEditTable(){
   const thead=document.querySelector('#paytEditTable thead');
   const tbody=document.querySelector('#paytEditTable tbody');
   const today=new Date().toISOString().slice(0,10);
-  thead.innerHTML=`<tr>
-    <th>N° facture</th><th>Débiteur</th><th>Entreprise</th>
-    <th style="text-align:right">Montant TTC</th><th style="text-align:right">Ouvert</th>
-    <th>Nouveau statut</th><th style="text-align:right">Montant payé (€)</th><th>Date paiement</th>
-    <th>Résultat</th>
-  </tr>`;
+  const EDIT_SORT_COLS=[
+    {label:'N° facture', key:'invoice_number'},
+    {label:'Débiteur',   key:'_debtor_name'},
+    {label:'Entreprise', key:'_admin_name'},
+    {label:'Montant TTC',key:'_total',  right:true},
+    {label:'Ouvert',     key:'_open',   right:true},
+  ];
+  // Sort _paytEditRawInvoices if a sort col is active
+  let editRows=[..._paytEditRawInvoices];
+  if(_paytEditSortCol){
+    const dir=_paytEditSortDir==='asc'?1:-1;
+    editRows.sort((a,b)=>{
+      let av,bv;
+      if(_paytEditSortCol==='_total'){av=parseFloat(a.book_total_amount||a.total_amount)||0;bv=parseFloat(b.book_total_amount||b.total_amount)||0;}
+      else if(_paytEditSortCol==='_open'){av=parseFloat(a.book_open_amount||a.open_amount)||0;bv=parseFloat(b.book_open_amount||b.open_amount)||0;}
+      else if(_paytEditSortCol==='_debtor_name'){av=a._debtor_name||a.debtor_name||a.debtor_number||'';bv=b._debtor_name||b.debtor_name||b.debtor_number||'';}
+      else if(_paytEditSortCol==='_admin_name'){av=adminMap[a.administration_id||a._administration_id]||'';bv=adminMap[b.administration_id||b._administration_id]||'';}
+      else{av=a[_paytEditSortCol]??'';bv=b[_paytEditSortCol]??'';}
+      return(typeof av==='number'&&typeof bv==='number'?av-bv:String(av).localeCompare(String(bv),'fr',{numeric:true}))*dir;
+    });
+  }
+
+  const sortedThs=EDIT_SORT_COLS.map(c=>{
+    const cls=_paytEditSortCol===c.key?(_paytEditSortDir==='asc'?'sort-asc':'sort-desc'):'';
+    return `<th class="${cls}"${c.right?' style="text-align:right"':''} onclick="sortPaytEdit('${c.key}')">${esc(c.label)}<span class="sort-icon"></span></th>`;
+  }).join('');
+  thead.innerHTML=`<tr>${sortedThs}<th>Nouveau statut</th><th style="text-align:right">Montant payé (€)</th><th>Date paiement</th><th>Résultat</th></tr>`;
   tbody.innerHTML='';
-  _paytEditRawInvoices.forEach(inv=>{
+  editRows.forEach(inv=>{
     const adminId=inv.administration_id||inv._administration_id||'';
     const k=adminId+'__'+inv.invoice_number;
     const openAmt=parseFloat(inv.book_open_amount||inv.open_amount)||0;
@@ -2247,9 +2270,21 @@ function renderPaytInvoicesTable(invoices){
       };
     });
 
+  // Sort
+  if(_paytInvSortCol){
+    const dir=_paytInvSortDir==='asc'?1:-1;
+    rows.sort((a,b)=>{
+      const av=a[_paytInvSortCol]??'', bv=b[_paytInvSortCol]??'';
+      return (typeof av==='number'&&typeof bv==='number' ? av-bv : String(av).localeCompare(String(bv),'fr',{numeric:true}))*dir;
+    });
+  }
+
   const thead=document.querySelector('#paytInvTable thead');
   const tbody=document.querySelector('#paytInvTable tbody');
-  thead.innerHTML='<tr>'+PAYT_INV_COLS.map(c=>`<th>${esc(c.label)}</th>`).join('')+'</tr>';
+  thead.innerHTML='<tr>'+PAYT_INV_COLS.map(c=>{
+    const cls=_paytInvSortCol===c.key?(_paytInvSortDir==='asc'?'sort-asc':'sort-desc'):'';
+    return `<th class="${cls}" onclick="sortPaytInv('${c.key}')">${esc(c.label)}<span class="sort-icon"></span></th>`;
+  }).join('')+'</tr>';
   tbody.innerHTML='';
   rows.forEach(row=>{
     const tr=document.createElement('tr');
@@ -2263,6 +2298,16 @@ function renderPaytInvoicesTable(invoices){
     }).join('');
     tbody.appendChild(tr);
   });
+}
+function sortPaytInv(col){
+  _paytInvSortDir=_paytInvSortCol===col?(_paytInvSortDir==='asc'?'desc':'asc'):'asc';
+  _paytInvSortCol=col;
+  if(_paytInvoicesCache) renderPaytInvoicesTable(_paytInvoicesCache);
+}
+function sortPaytEdit(col){
+  _paytEditSortDir=_paytEditSortCol===col?(_paytEditSortDir==='asc'?'desc':'asc'):'asc';
+  _paytEditSortCol=col;
+  renderPaytEditTable();
 }
 function confirmRestart(){
   document.getElementById('restartWarnBg').classList.add('show');
