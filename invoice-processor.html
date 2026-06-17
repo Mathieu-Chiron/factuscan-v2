@@ -332,7 +332,6 @@ html,body{overflow:hidden;}
     <div class="topbar-right">
       <button class="btn btn-ghost btn-sm" id="btnSettings" style="display:none;" onclick="openModal()">Paramètres</button>
       <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
-      <button class="btn btn-primary btn-sm" id="btnExtract" onclick="startExtraction()" disabled>Extraire les données</button>
       <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
     </div>
   </div>
@@ -412,9 +411,9 @@ html,body{overflow:hidden;}
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.5rem;">
       <div><div class="exp-title">Mes factures</div><div class="exp-sub">Résumé des factures traitées.</div></div>
       <div style="display:flex;gap:8px;align-items:center;">
-        <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Editez vos factures</button>
-        <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">+ Ajouter des factures</button>
         <button class="btn btn-neutral btn-sm" onclick="hideExport()">← Retour</button>
+        <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">Ajoutez des factures</button>
+        <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Statuez vos factures</button>
         <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
       </div>
     </div>
@@ -1240,7 +1239,6 @@ function updateBar(){
   const done=editableInvs.filter(i=>i.status==='validated'||i.status==='skipped').length;
   const total=editableInvs.length;
   const pending=editableInvs.filter(i=>i.status==='pending').length;
-  document.getElementById('btnExtract').disabled=pending===0||S.busy;
 
   if(total>0){
     document.getElementById('progWrap').style.display='flex';
