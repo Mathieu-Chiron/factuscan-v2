@@ -2363,6 +2363,25 @@ async function pushAndExport(){
       else{inv.pushStatus='error';inv.pushNote=(r?.errors||[]).join(', ')||'Erreur inconnue';err++;}
     });
     saveDataset();
+
+    // Upload PDFs for successfully pushed invoices
+    const pdfQueue=toCreate.filter(inv=>inv.pushStatus==='success');
+    if(pdfQueue.length){
+      if(btn) btn.textContent='Envoi PDF…';
+      await Promise.all(pdfQueue.map(async inv=>{
+        try{
+          if(!inv.pdfUrl){inv.pdfError='PDF non disponible (URL Blob manquante)';return;}
+          const pdfRes=await fetch('/api/payt-pdf',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({token,administration_id:inv.targetCompany.id,invoice_number:inv.data.invoice_number,filename:inv.fileName,pdf_url:inv.pdfUrl}),
+          });
+          const pdfData=await pdfRes.json().catch(()=>({}));
+          inv.pdfError=pdfData.success?null:(pdfData.error||'Erreur upload PDF');
+        }catch(e){inv.pdfError='Erreur réseau (PDF)';}
+      }));
+      saveDataset();
+    }
   }catch(e){
     toCreate.forEach(inv=>{inv.pushStatus='error';inv.pushNote='Erreur réseau';});
     console.error('[pushAndExport]',e);
