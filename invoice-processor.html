@@ -50,10 +50,19 @@ html,body { overflow:hidden; }
 .payt-setup-help{font-size:12px;color:var(--text2);margin-top:2px;}
 #paytSetupError{font-size:13px;color:var(--red);display:none;}
 
+/* NAVBARS */
+#navbar1{position:fixed;top:0;left:0;right:0;height:36px;background:#2b3f6d;display:flex;align-items:center;padding:0 16px;z-index:9999;flex-shrink:0;}
+.nb1-logo{font-size:13px;font-weight:700;color:#fff;letter-spacing:.04em;}
+#navbar2{position:fixed;top:36px;left:0;right:0;height:40px;background:#445d94;display:flex;align-items:center;justify-content:space-between;padding:0 12px;z-index:9998;gap:10px;}
+#nb2-org{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#fff;min-width:0;overflow:hidden;}
+#nb2-org span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#nb2-nav{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.btn-ghost-danger{background:transparent;color:rgba(255,140,140,0.90);border:1px solid rgba(255,100,100,0.30);}
+.btn-ghost-danger:hover:not(:disabled){background:rgba(255,100,100,0.18);color:#ffaaaa;}
+
 /* UPLOAD */
-#screen-upload{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff;transition:opacity .25s;}
+#screen-upload{position:fixed;top:76px;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff;transition:opacity .25s;}
 #screen-upload.out{opacity:0;pointer-events:none;}
-#screen-upload > div:first-child{position:fixed;top:0;right:0;left:0;height:var(--topbar);display:flex;align-items:center;justify-content:flex-end;background:#1a2e44;padding:0 16px;gap:8px;}
 .dz-title{font-size:20px;font-weight:700;margin-bottom:6px;color:var(--navy);}
 .dz-sub{font-size:14px;color:var(--text2);margin-bottom:2.5rem;}
 .dropzone{width:min(500px,90vw);border:1.5px dashed var(--bd2);border-radius:12px;padding:3rem 2rem;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;background:#f9fafb;}
@@ -64,22 +73,10 @@ html,body { overflow:hidden; }
 .dz-limit{font-size:13px;font-weight:600;color:#92400e;background:rgba(245,166,35,0.10);border:1px solid rgba(245,166,35,0.30);border-radius:20px;padding:6px 16px;margin-top:14px;display:inline-block;}
 
 /* MAIN */
-#screen-main{position:fixed;inset:0;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .25s;background:#fff;}
+#screen-main{position:fixed;top:76px;left:0;right:0;bottom:0;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .25s;background:#fff;}
 #screen-main.in{opacity:1;pointer-events:all;}
 
-/* GLOBAL BADGE */
-#globalBadge{position:fixed;top:10px;left:14px;z-index:9999;display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--bd);border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600;color:var(--navy);box-shadow:0 1px 4px rgba(0,0,0,0.06);}
-
-/* TOPBAR */
-.topbar{height:var(--topbar);background:#1a2e44;display:flex;align-items:center;justify-content:space-between;padding:0 14px;flex-shrink:0;gap:10px;}
-.topbar-left{display:flex;align-items:center;gap:10px;}
-.prog-wrap{display:flex;align-items:center;gap:6px;font-size:12px;color:rgba(255,255,255,0.55);}
-.prog-bar{width:80px;height:3px;background:rgba(255,255,255,0.15);border-radius:2px;overflow:hidden;}
-.prog-fill{height:100%;background:#55D6DE;transition:width .3s;}
-.topbar-right{display:flex;align-items:center;gap:6px;}
-.admin-badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid;margin-bottom:10px;}
-.admin-badge.ok{color:#16a34a;background:rgba(22,163,74,0.08);border-color:rgba(22,163,74,0.25);}
-.admin-badge.err{color:var(--red);background:var(--red-bg);border-color:var(--red-border);}
+/* EXPORT / INVOICE-EDIT top offset handled below */
 
 /* LAYOUT */
 .layout{flex:1;display:flex;overflow:hidden;position:relative;}
@@ -198,9 +195,9 @@ html,body { overflow:hidden; }
 .pdf-name-badge.ko{background:var(--red);color:#fff;}
 
 /* EXPORT */
-#screen-export{position:fixed;inset:0;background:#fff;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .2s;overflow-y:auto;z-index:30;}
+#screen-export{position:fixed;top:76px;left:0;right:0;bottom:0;background:#fff;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .2s;overflow-y:auto;z-index:30;}
 #screen-export.show{opacity:1;pointer-events:all;}
-#screen-invoice-edit{position:fixed;inset:0;background:#fff;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .2s;overflow-y:auto;z-index:30;}
+#screen-invoice-edit{position:fixed;top:76px;left:0;right:0;bottom:0;background:#fff;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .2s;overflow-y:auto;z-index:30;}
 #screen-invoice-edit.show{opacity:1;pointer-events:all;}
 .exp-wrap{width:90vw;max-width:90vw;margin:0 auto;padding:2rem 1.5rem 4rem;}
 .exp-title{font-size:20px;font-weight:700;color:var(--navy);margin-bottom:4px;}
@@ -315,10 +312,19 @@ html,body { overflow:hidden; }
 <div class="blob blob-2"></div>
 <div class="blob blob-3"></div>
 
-<!-- badge admin global — toujours visible au-dessus de tout -->
-<div id="globalBadge">
-  <span id="globalBadgeName"></span>
-  <span id="globalBadgeStatus"></span>
+<!-- ═══ NAVBARS (always visible) ═══════════════════ -->
+<div id="navbar1" style="display:none;">
+  <span class="nb1-logo">FactuScan</span>
+</div>
+<div id="navbar2" style="display:none;">
+  <div id="nb2-org">
+    <span id="globalBadgeName"></span>
+    <span id="globalBadgeStatus"></span>
+  </div>
+  <div id="progWrap" style="display:none;">
+    <span id="progTxt" style="font-size:12px;color:rgba(255,255,255,0.65);">0/0</span>
+  </div>
+  <div id="nb2-nav"></div>
 </div>
 
 <!-- ═══ AUTH ══════════════════════════════════════ -->
@@ -343,11 +349,6 @@ html,body { overflow:hidden; }
 
 <!-- ═══ UPLOAD ════════════════════════════════════ -->
 <div id="screen-upload" class="z-content">
-  <div style="position:fixed;top:16px;right:20px;display:flex;gap:8px;align-items:center;">
-    <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
-    <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Statuez vos factures</button>
-    <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
-  </div>
   <div class="dz-title">FactuScan V2</div>
   <div class="dz-sub">Uploadez vos factures, vérifiez les données extraites, obtenez les fichiers prêts à importer.</div>
   <div class="dropzone" id="dropzone"
@@ -372,21 +373,6 @@ html,body { overflow:hidden; }
 
 <!-- ═══ MAIN ══════════════════════════════════════ -->
 <div id="screen-main" class="z-content">
-  <!-- topbar -->
-  <div class="topbar">
-    <div class="topbar-left">
-      <div class="prog-wrap" id="progWrap" style="display:none;">
-        <span id="progTxt" style="font-size:12px;color:rgba(255,255,255,0.6);">0/0</span>
-      </div>
-    </div>
-    <div class="topbar-right">
-      <button class="btn btn-ghost btn-sm" id="btnSettings" style="display:none;" onclick="openModal()">Paramètres</button>
-      <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">Accueil</button>
-      <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
-      <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
-    </div>
-  </div>
-
   <div class="layout">
     <!-- sidebar -->
     <div class="sidebar">
@@ -459,16 +445,8 @@ html,body { overflow:hidden; }
 <!-- ═══ EXPORT ════════════════════════════════════ -->
 <div id="screen-export" class="z-content">
   <div class="exp-wrap">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.5rem;">
-      <div>
-        <div class="exp-title">Mes factures</div><div class="exp-sub">Résumé des factures traitées.</div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">Accueil</button>
-        <button class="btn btn-neutral btn-sm" onclick="navigate('/invoice-processor','editor')">Ajoutez des factures</button>
-        <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Statuez vos factures</button>
-        <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
-      </div>
+    <div style="margin-bottom:1.5rem;">
+      <div class="exp-title">Mes factures</div><div class="exp-sub">Résumé des factures traitées.</div>
     </div>
     <div id="expStats" style="display:none;"></div>
     <div id="selCount" style="display:none;"></div>
@@ -495,18 +473,10 @@ html,body { overflow:hidden; }
 <!-- ═══ INVOICE EDIT ══════════════════════════════ -->
 <div id="screen-invoice-edit" class="z-content">
   <div class="exp-wrap">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.5rem;">
-      <div>
-        <div class="exp-title">Factures à traiter</div>
-        <div class="exp-sub">Factures ouvertes chargées depuis votre compte PAYT.</div>
-        <p style="font-size:12px;color:var(--muted);margin-top:4px;">Seules les factures encore non soldées apparaissent sur cette page.</p>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">Accueil</button>
-        <button class="btn btn-neutral btn-sm" onclick="navigate('/invoice-processor','editor')">Ajoutez des factures</button>
-        <button class="btn btn-neutral btn-sm" onclick="navigate('/invoices','invoices')">Mes factures</button>
-        <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
-      </div>
+    <div style="margin-bottom:1.5rem;">
+      <div class="exp-title">Factures à traiter</div>
+      <div class="exp-sub">Factures ouvertes chargées depuis votre compte PAYT.</div>
+      <p style="font-size:12px;color:var(--muted);margin-top:4px;">Seules les factures encore non soldées apparaissent sur cette page.</p>
     </div>
     <div id="paytEditStatus" style="font-size:13px;color:var(--muted);margin-bottom:10px;display:none;"></div>
     <div class="exp-table-wrap" id="paytEditWrap" style="display:none;">
@@ -1778,6 +1748,7 @@ document.addEventListener('click',()=>{
 
 /* ══ ROUTING (History API) ════════════════════════════ */
 function _showScreen(name){
+  setNavButtons(name==='invoices'?'invoices':name==='invoice-edit'?'invoice-edit':name==='editor'?'editor':'upload');
   if(name==='invoices'){
     const cloturees=S.invoices.filter(i=>i.paytStatus==='Clôturée').length;
     const ouvertes=S.invoices.filter(i=>i.status==='validated'&&i.paytStatus!=='Clôturée'&&i.paytStatus!=='Payée').length;
@@ -2594,12 +2565,35 @@ function blobProxyUrl(url){return `/api/blob-get?url=${encodeURIComponent(url)}`
 if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 function updateAdminBadge(ok, label){
   const icon = ok
-    ? `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#16a34a"/><path d="M3.5 6l1.8 1.8L8.5 4.5" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+    ? `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#fff"/><path d="M3.5 6l1.8 1.8L8.5 4.5" stroke="#445d94" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`
     : `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#D91F2C"/><path d="M4 4l4 4M8 4l-4 4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>`;
   const n=document.getElementById('globalBadgeName');
   const s=document.getElementById('globalBadgeStatus');
   if(n) n.textContent=label;
   if(s) s.innerHTML=icon;
+  // Show navbars now that we have org info
+  const nb1=document.getElementById('navbar1');
+  const nb2=document.getElementById('navbar2');
+  if(nb1) nb1.style.display='flex';
+  if(nb2) nb2.style.display='flex';
+}
+
+function setNavButtons(screen){
+  const nb=document.getElementById('nb2-nav');
+  if(!nb) return;
+  const ghost='btn btn-ghost btn-sm';
+  const danger='btn btn-ghost-danger btn-sm';
+  const maps={
+    upload:`<button class="${ghost}" onclick="showExport()">Mes factures</button><button class="${ghost}" onclick="navigate('/invoice-edit','invoice-edit')">Statuez vos factures</button><button class="${danger}" onclick="signOut()">Déconnexion</button>`,
+    editor:`<button class="${ghost}" id="btnSettings" style="display:none;" onclick="openModal()">Paramètres</button><button class="${ghost}" onclick="navigate('/','upload')">Accueil</button><button class="${ghost}" onclick="showExport()">Mes factures</button><button class="${danger}" onclick="signOut()">Déconnexion</button>`,
+    invoices:`<button class="${ghost}" onclick="navigate('/','upload')">Accueil</button><button class="${ghost}" onclick="navigate('/invoice-processor','editor')">Ajoutez des factures</button><button class="${ghost}" onclick="navigate('/invoice-edit','invoice-edit')">Statuez vos factures</button><button class="${danger}" onclick="signOut()">Déconnexion</button>`,
+    'invoice-edit':`<button class="${ghost}" onclick="navigate('/','upload')">Accueil</button><button class="${ghost}" onclick="navigate('/invoice-processor','editor')">Ajoutez des factures</button><button class="${ghost}" onclick="navigate('/invoices','invoices')">Mes factures</button><button class="${danger}" onclick="signOut()">Déconnexion</button>`,
+  };
+  nb.innerHTML=maps[screen]||maps.upload;
+  if(screen==='editor'){
+    const bs=document.getElementById('btnSettings');
+    if(bs) bs.style.display=sessionStorage.getItem('adminAuth')==='1'?'':'none';
+  }
 }
 
 async function loadCompanies(){
@@ -2755,9 +2749,14 @@ async function autoRestore(){
   }catch(e){}
 }
 initClerk();
-if(sessionStorage.getItem('adminAuth')==='1'){
-  document.getElementById('btnSettings').style.display='';
-}
+// Set initial nav buttons based on current URL
+(function(){
+  const p=location.pathname;
+  if(p==='/invoices') setNavButtons('invoices');
+  else if(p==='/invoice-edit') setNavButtons('invoice-edit');
+  else if(p==='/invoice-processor') setNavButtons('editor');
+  else setNavButtons('upload');
+})();
 console.log('%cFactuScan — version 77','color:#55D6DE;font-weight:700;font-size:13px;');
 </script>
 <div id="versionTag" style="position:fixed;bottom:10px;left:14px;font-size:11px;color:var(--text3);z-index:9999;pointer-events:none;">version 77</div>
