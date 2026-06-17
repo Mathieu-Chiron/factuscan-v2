@@ -291,6 +291,10 @@ html,body{overflow:hidden;}
 
 <!-- ═══ UPLOAD ════════════════════════════════════ -->
 <div id="screen-upload" class="z-content">
+  <div style="position:fixed;top:14px;left:16px;display:flex;align-items:center;gap:7px;">
+    <span id="adminBadgeNameUpload" style="font-size:12px;font-weight:600;color:var(--navy);"></span>
+    <span id="adminBadgeStatusUpload"></span>
+  </div>
   <div style="position:fixed;top:16px;right:20px;display:flex;gap:8px;align-items:center;">
     <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Editez vos factures</button>
     <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
@@ -2472,15 +2476,14 @@ function toB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onlo
 function blobProxyUrl(url){return `/api/blob-get?url=${encodeURIComponent(url)}`;}
 if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 function updateAdminBadge(ok, label){
-  const nameEl = document.getElementById('adminBadgeName');
-  const statusEl = document.getElementById('adminBadgeStatus');
-  if(!nameEl) return;
-  nameEl.textContent = label;
-  if(ok){
-    statusEl.innerHTML = `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#16a34a"/><path d="M3.5 6l1.8 1.8L8.5 4.5" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  } else {
-    statusEl.innerHTML = `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#D91F2C"/><path d="M4 4l4 4M8 4l-4 4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>`;
-  }
+  const icon = ok
+    ? `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#16a34a"/><path d="M3.5 6l1.8 1.8L8.5 4.5" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+    : `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#D91F2C"/><path d="M4 4l4 4M8 4l-4 4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+  [['adminBadgeName','adminBadgeStatus'],['adminBadgeNameUpload','adminBadgeStatusUpload']].forEach(([nId,sId])=>{
+    const n=document.getElementById(nId); const s=document.getElementById(sId);
+    if(n) n.textContent=label;
+    if(s) s.innerHTML=icon;
+  });
 }
 
 async function loadCompanies(){
