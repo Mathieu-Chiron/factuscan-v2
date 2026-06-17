@@ -52,6 +52,9 @@ html,body{overflow:hidden;}
 #screen-main{position:fixed;inset:0;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .25s;}
 #screen-main.in{opacity:1;pointer-events:all;}
 
+/* GLOBAL BADGE — always visible above all screens */
+#globalBadge{position:fixed;top:12px;left:14px;z-index:9999;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:4px 10px;border-radius:20px;border:1px solid rgba(0,0,0,0.08);box-shadow:0 1px 4px rgba(0,0,0,0.10);font-size:12px;font-weight:600;color:var(--navy);}
+
 /* TOPBAR — app additions */
 .topbar-left{display:flex;align-items:center;gap:14px;}
 .prog-wrap{display:flex;align-items:center;gap:7px;font-size:12px;color:rgba(255,255,255,0.6);}
@@ -267,7 +270,11 @@ html,body{overflow:hidden;}
 <div class="blob blob-2"></div>
 <div class="blob blob-3"></div>
 
-<!-- badge admin — intégré dans la topbar de screen-main -->
+<!-- badge admin global — toujours visible au-dessus de tout -->
+<div id="globalBadge">
+  <span id="globalBadgeName"></span>
+  <span id="globalBadgeStatus"></span>
+</div>
 
 <!-- ═══ AUTH ══════════════════════════════════════ -->
 <div id="screen-auth">
@@ -291,13 +298,9 @@ html,body{overflow:hidden;}
 
 <!-- ═══ UPLOAD ════════════════════════════════════ -->
 <div id="screen-upload" class="z-content">
-  <div style="position:fixed;top:14px;left:16px;display:flex;align-items:center;gap:7px;">
-    <span id="adminBadgeNameUpload" style="font-size:12px;font-weight:600;color:var(--navy);"></span>
-    <span id="adminBadgeStatusUpload"></span>
-  </div>
   <div style="position:fixed;top:16px;right:20px;display:flex;gap:8px;align-items:center;">
-    <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Editez vos factures</button>
     <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
+    <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Statuez vos factures</button>
     <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
   </div>
   <div class="dz-title">FactuScan V2</div>
@@ -327,14 +330,13 @@ html,body{overflow:hidden;}
   <!-- topbar -->
   <div class="topbar">
     <div class="topbar-left">
-      <span id="adminBadgeName" style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.9);"></span>
-      <span id="adminBadgeStatus"></span>
       <div class="prog-wrap" id="progWrap" style="display:none;">
         <span id="progTxt" style="font-size:12px;color:rgba(255,255,255,0.6);">0/0</span>
       </div>
     </div>
     <div class="topbar-right">
       <button class="btn btn-ghost btn-sm" id="btnSettings" style="display:none;" onclick="openModal()">Paramètres</button>
+      <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">Accueil</button>
       <button class="btn btn-neutral btn-sm" onclick="showExport()">Mes factures</button>
       <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
     </div>
@@ -414,15 +416,11 @@ html,body{overflow:hidden;}
   <div class="exp-wrap">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.5rem;">
       <div>
-        <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;">
-          <span id="adminBadgeNameExport" style="font-size:12px;font-weight:600;color:var(--navy);"></span>
-          <span id="adminBadgeStatusExport"></span>
-        </div>
         <div class="exp-title">Mes factures</div><div class="exp-sub">Résumé des factures traitées.</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
-        <button class="btn btn-neutral btn-sm" onclick="hideExport()">← Retour</button>
-        <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">Ajoutez des factures</button>
+        <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">Accueil</button>
+        <button class="btn btn-neutral btn-sm" onclick="navigate('/invoice-processor','editor')">Ajoutez des factures</button>
         <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-edit','invoice-edit')">Statuez vos factures</button>
         <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
       </div>
@@ -460,8 +458,9 @@ html,body{overflow:hidden;}
         <p style="font-size:12px;color:var(--muted);margin-top:4px;">Seules les factures encore non soldées apparaissent sur cette page.</p>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">Accueil</button>
+        <button class="btn btn-neutral btn-sm" onclick="navigate('/invoice-processor','editor')">Ajoutez des factures</button>
         <button class="btn btn-neutral btn-sm" onclick="navigate('/invoices','invoices')">Mes factures</button>
-        <button class="btn btn-primary btn-sm" onclick="navigate('/invoice-processor','editor')">Ajoutez des factures</button>
         <button class="btn btn-danger btn-sm" onclick="signOut()">Déconnexion</button>
       </div>
     </div>
@@ -2553,11 +2552,10 @@ function updateAdminBadge(ok, label){
   const icon = ok
     ? `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#16a34a"/><path d="M3.5 6l1.8 1.8L8.5 4.5" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`
     : `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#D91F2C"/><path d="M4 4l4 4M8 4l-4 4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>`;
-  [['adminBadgeName','adminBadgeStatus'],['adminBadgeNameUpload','adminBadgeStatusUpload'],['adminBadgeNameExport','adminBadgeStatusExport']].forEach(([nId,sId])=>{
-    const n=document.getElementById(nId); const s=document.getElementById(sId);
-    if(n) n.textContent=label;
-    if(s) s.innerHTML=icon;
-  });
+  const n=document.getElementById('globalBadgeName');
+  const s=document.getElementById('globalBadgeStatus');
+  if(n) n.textContent=label;
+  if(s) s.innerHTML=icon;
 }
 
 async function loadCompanies(){
