@@ -413,7 +413,13 @@ html,body{overflow:hidden;}
 <div id="screen-export" class="z-content">
   <div class="exp-wrap">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.5rem;">
-      <div><div class="exp-title">Mes factures</div><div class="exp-sub">Résumé des factures traitées.</div></div>
+      <div>
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;">
+          <span id="adminBadgeNameExport" style="font-size:12px;font-weight:600;color:var(--navy);"></span>
+          <span id="adminBadgeStatusExport"></span>
+        </div>
+        <div class="exp-title">Mes factures</div><div class="exp-sub">Résumé des factures traitées.</div>
+      </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="btn btn-neutral btn-sm" onclick="hideExport()">← Retour</button>
         <button class="btn btn-neutral btn-sm" onclick="navigate('/','upload')">Ajoutez des factures</button>
@@ -1654,6 +1660,8 @@ function deleteSelected(){
 let paytAdministrations=[];
 let _paytInvoicesCache=null;
 let _paytEditRawInvoices=[];
+let _paytInvSortCol=null,_paytInvSortDir='asc';
+let _paytEditSortCol=null,_paytEditSortDir='asc';
 let _editState={}; // keyed by invoice_number: { status, amountPaid, paymentDate }
 let _paytEditPushResults={}; // keyed by invoice_number: { status: 'Payée'|'Clôturée' } after successful push
 let _openCselPanel=null;
@@ -2055,14 +2063,35 @@ function renderPaytEditTable(){
   const thead=document.querySelector('#paytEditTable thead');
   const tbody=document.querySelector('#paytEditTable tbody');
   const today=new Date().toISOString().slice(0,10);
-  thead.innerHTML=`<tr>
-    <th>N° facture</th><th>Débiteur</th><th>Entreprise</th>
-    <th style="text-align:right">Montant TTC</th><th style="text-align:right">Ouvert</th>
-    <th>Nouveau statut</th><th style="text-align:right">Montant payé (€)</th><th>Date paiement</th>
-    <th>Résultat</th>
-  </tr>`;
+  const EDIT_SORT_COLS=[
+    {label:'N° facture', key:'invoice_number'},
+    {label:'Débiteur',   key:'_debtor_name'},
+    {label:'Entreprise', key:'_admin_name'},
+    {label:'Montant TTC',key:'_total',  right:true},
+    {label:'Ouvert',     key:'_open',   right:true},
+  ];
+  // Sort _paytEditRawInvoices if a sort col is active
+  let editRows=[..._paytEditRawInvoices];
+  if(_paytEditSortCol){
+    const dir=_paytEditSortDir==='asc'?1:-1;
+    editRows.sort((a,b)=>{
+      let av,bv;
+      if(_paytEditSortCol==='_total'){av=parseFloat(a.book_total_amount||a.total_amount)||0;bv=parseFloat(b.book_total_amount||b.total_amount)||0;}
+      else if(_paytEditSortCol==='_open'){av=parseFloat(a.book_open_amount||a.open_amount)||0;bv=parseFloat(b.book_open_amount||b.open_amount)||0;}
+      else if(_paytEditSortCol==='_debtor_name'){av=a._debtor_name||a.debtor_name||a.debtor_number||'';bv=b._debtor_name||b.debtor_name||b.debtor_number||'';}
+      else if(_paytEditSortCol==='_admin_name'){av=adminMap[a.administration_id||a._administration_id]||'';bv=adminMap[b.administration_id||b._administration_id]||'';}
+      else{av=a[_paytEditSortCol]??'';bv=b[_paytEditSortCol]??'';}
+      return(typeof av==='number'&&typeof bv==='number'?av-bv:String(av).localeCompare(String(bv),'fr',{numeric:true}))*dir;
+    });
+  }
+
+  const sortedThs=EDIT_SORT_COLS.map(c=>{
+    const cls=_paytEditSortCol===c.key?(_paytEditSortDir==='asc'?'sort-asc':'sort-desc'):'';
+    return `<th class="${cls}"${c.right?' style="text-align:right"':''} onclick="sortPaytEdit('${c.key}')">${esc(c.label)}<span class="sort-icon"></span></th>`;
+  }).join('');
+  thead.innerHTML=`<tr>${sortedThs}<th>Nouveau statut</th><th style="text-align:right">Montant payé (€)</th><th>Date paiement</th><th>Résultat</th></tr>`;
   tbody.innerHTML='';
-  _paytEditRawInvoices.forEach(inv=>{
+  editRows.forEach(inv=>{
     const adminId=inv.administration_id||inv._administration_id||'';
     const k=adminId+'__'+inv.invoice_number;
     const openAmt=parseFloat(inv.book_open_amount||inv.open_amount)||0;
@@ -2241,9 +2270,21 @@ function renderPaytInvoicesTable(invoices){
       };
     });
 
+  // Sort
+  if(_paytInvSortCol){
+    const dir=_paytInvSortDir==='asc'?1:-1;
+    rows.sort((a,b)=>{
+      const av=a[_paytInvSortCol]??'', bv=b[_paytInvSortCol]??'';
+      return (typeof av==='number'&&typeof bv==='number' ? av-bv : String(av).localeCompare(String(bv),'fr',{numeric:true}))*dir;
+    });
+  }
+
   const thead=document.querySelector('#paytInvTable thead');
   const tbody=document.querySelector('#paytInvTable tbody');
-  thead.innerHTML='<tr>'+PAYT_INV_COLS.map(c=>`<th>${esc(c.label)}</th>`).join('')+'</tr>';
+  thead.innerHTML='<tr>'+PAYT_INV_COLS.map(c=>{
+    const cls=_paytInvSortCol===c.key?(_paytInvSortDir==='asc'?'sort-asc':'sort-desc'):'';
+    return `<th class="${cls}" onclick="sortPaytInv('${c.key}')">${esc(c.label)}<span class="sort-icon"></span></th>`;
+  }).join('')+'</tr>';
   tbody.innerHTML='';
   rows.forEach(row=>{
     const tr=document.createElement('tr');
@@ -2257,6 +2298,16 @@ function renderPaytInvoicesTable(invoices){
     }).join('');
     tbody.appendChild(tr);
   });
+}
+function sortPaytInv(col){
+  _paytInvSortDir=_paytInvSortCol===col?(_paytInvSortDir==='asc'?'desc':'asc'):'asc';
+  _paytInvSortCol=col;
+  if(_paytInvoicesCache) renderPaytInvoicesTable(_paytInvoicesCache);
+}
+function sortPaytEdit(col){
+  _paytEditSortDir=_paytEditSortCol===col?(_paytEditSortDir==='asc'?'desc':'asc'):'asc';
+  _paytEditSortCol=col;
+  renderPaytEditTable();
 }
 function confirmRestart(){
   document.getElementById('restartWarnBg').classList.add('show');
@@ -2502,7 +2553,7 @@ function updateAdminBadge(ok, label){
   const icon = ok
     ? `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#16a34a"/><path d="M3.5 6l1.8 1.8L8.5 4.5" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`
     : `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#D91F2C"/><path d="M4 4l4 4M8 4l-4 4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>`;
-  [['adminBadgeName','adminBadgeStatus'],['adminBadgeNameUpload','adminBadgeStatusUpload']].forEach(([nId,sId])=>{
+  [['adminBadgeName','adminBadgeStatus'],['adminBadgeNameUpload','adminBadgeStatusUpload'],['adminBadgeNameExport','adminBadgeStatusExport']].forEach(([nId,sId])=>{
     const n=document.getElementById(nId); const s=document.getElementById(sId);
     if(n) n.textContent=label;
     if(s) s.innerHTML=icon;
