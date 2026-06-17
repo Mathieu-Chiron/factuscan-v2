@@ -750,6 +750,7 @@ function closeBatchLimitPopup(){document.getElementById('batchLimitBg').classLis
 /* ══ STATE ══════════════════════════════════════════ */
 const S = {
   fields:[
+    {label:'Créancier',              key:'creditor_name',              type:'text',   required:true},
     {label:'NOM/PRENOM - ENTREPRISE', key:'debtor_lastname',          type:'text',   required:true},
     {label:'Adresse',            key:'debtor_post_street_1',         type:'text',   required:true},
     {label:'Code postal',        key:'debtor_post_postalcode',       type:'postal_code',   required:true},
@@ -992,9 +993,12 @@ function renderFieldsUI(inv) {
 
   const locked=isInvLocked(inv);
 
+  const GROUP_CREDITOR=['creditor_name'];
   const GROUP_DEBTOR=['debtor_lastname','debtor_post_street_1','debtor_post_postalcode','debtor_post_city','debtor_post_country_code','debtor_email'];
   const GROUP_INVOICE=['invoice_number','invoice_date','invoice_due_date','invoice_total_amount_inc_vat','invoice_open_amount_inc_vat'];
 
+  const groupCreditor=document.createElement('div');groupCreditor.className='field-group';
+  groupCreditor.innerHTML='<div class="field-group-title">Créancier</div>';
   const groupDebtor=document.createElement('div');groupDebtor.className='field-group';
   groupDebtor.innerHTML='<div class="field-group-title">Débiteur</div>';
   const groupInvoice=document.createElement('div');groupInvoice.className='field-group';
@@ -1030,7 +1034,8 @@ function renderFieldsUI(inv) {
       ${err?`<div class="field-err" style="color:var(--amber-text);">${esc(err)}</div>`:''}
       ${wasNorm&&!err?'<div class="field-hint">Normalisée automatiquement</div>':''}
     `;
-    if(GROUP_DEBTOR.includes(f.key)) groupDebtor.appendChild(row);
+    if(GROUP_CREDITOR.includes(f.key)) groupCreditor.appendChild(row);
+    else if(GROUP_DEBTOR.includes(f.key)) groupDebtor.appendChild(row);
     else if(GROUP_INVOICE.includes(f.key)) groupInvoice.appendChild(row);
     else c.appendChild(row);
   });
@@ -1079,6 +1084,7 @@ function renderFieldsUI(inv) {
       </div>`;
   }
 
+  c.appendChild(groupCreditor);
   c.appendChild(groupDebtor);
   c.appendChild(groupInvoice);
   c.appendChild(compRow);
@@ -2328,7 +2334,7 @@ async function pushAndExport(){
     const debtor_number=computeDebtorCode(inv.data)||generateDebtorCode(inv.data)||'UNKNOWN';
     return{
       administration_id:         inv.targetCompany.id,
-      administration_name:       inv.targetCompany.name||undefined,
+      creditor_name:             inv.data.creditor_name||undefined,
       invoice_number:            inv.data.invoice_number,
       invoice_date:              inv.data.invoice_date,
       invoice_due_date:          inv.data.invoice_due_date,
