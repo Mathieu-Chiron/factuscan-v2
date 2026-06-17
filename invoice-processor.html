@@ -267,14 +267,7 @@ html,body{overflow:hidden;}
 <div class="blob blob-2"></div>
 <div class="blob blob-3"></div>
 
-<!-- badge admin global (haut gauche, tous écrans sauf screen-main) -->
-<div id="adminBadgeWrap" style="display:none;position:fixed;top:14px;left:16px;z-index:300;display:none;flex-direction:column;gap:0;">
-  <div style="display:flex;align-items:center;gap:6px;">
-    <span id="adminBadgeName" style="font-size:12px;font-weight:600;color:var(--navy);"></span>
-    <span id="adminBadgeStatus"></span>
-  </div>
-  <div style="height:10px;"></div>
-</div>
+<!-- badge admin — intégré dans la topbar de screen-main -->
 
 <!-- ═══ AUTH ══════════════════════════════════════ -->
 <div id="screen-auth">
@@ -330,10 +323,10 @@ html,body{overflow:hidden;}
   <!-- topbar -->
   <div class="topbar">
     <div class="topbar-left">
-      <span class="topbar-title">Factures</span>
+      <span id="adminBadgeName" style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.9);"></span>
+      <span id="adminBadgeStatus"></span>
       <div class="prog-wrap" id="progWrap" style="display:none;">
-        <div class="progress-bar"><div class="progress-bar__fill" id="progFill" style="width:0%"></div></div>
-        <span id="progTxt">0 / 0</span>
+        <span id="progTxt" style="font-size:12px;color:rgba(255,255,255,0.6);">0/0</span>
       </div>
     </div>
     <div class="topbar-right">
@@ -1251,8 +1244,7 @@ function updateBar(){
 
   if(total>0){
     document.getElementById('progWrap').style.display='flex';
-    document.getElementById('progFill').style.width=Math.round(done/total*100)+'%';
-    document.getElementById('progTxt').textContent=`${done} / ${total}`;
+    document.getElementById('progTxt').textContent=`${done}/${total}`;
   }
 }
 
@@ -2475,17 +2467,15 @@ function toB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onlo
 function blobProxyUrl(url){return `/api/blob-get?url=${encodeURIComponent(url)}`;}
 if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 function updateAdminBadge(ok, label){
-  const wrap = document.getElementById('adminBadgeWrap');
   const nameEl = document.getElementById('adminBadgeName');
   const statusEl = document.getElementById('adminBadgeStatus');
-  if(!wrap) return;
+  if(!nameEl) return;
   nameEl.textContent = label;
   if(ok){
     statusEl.innerHTML = `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#16a34a"/><path d="M3.5 6l1.8 1.8L8.5 4.5" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   } else {
     statusEl.innerHTML = `<svg width="13" height="13" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="6" fill="#D91F2C"/><path d="M4 4l4 4M8 4l-4 4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>`;
   }
-  wrap.style.display = 'flex';
 }
 
 async function loadCompanies(){
