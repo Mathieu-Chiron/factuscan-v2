@@ -2516,7 +2516,14 @@ async function loadUserSettings(){
       await loadCompanies();
       await autoRestore();
     } else {
-      window.location.href = '/payt-connect';
+      // Fallback: token may be in localStorage (e.g. DB save was skipped)
+      const localToken = localStorage.getItem('paytToken');
+      if(localToken){
+        await loadCompanies();
+        await autoRestore();
+      } else {
+        window.location.href = '/payt-connect';
+      }
     }
   }catch(e){ console.error('loadUserSettings error:', e); }
 }
