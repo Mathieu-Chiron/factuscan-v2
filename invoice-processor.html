@@ -1974,14 +1974,13 @@ function dlBlob(b,n){const a=document.createElement('a');a.href=URL.createObject
 
 /* ══ PAYT INVOICE LIST ═══════════════════════════════ */
 const PAYT_INV_COLS=[
-  {label:'N° facture',  key:'invoice_number'},
-  {label:'Débiteur',    key:'_debtor'},
-  {label:'Émission',    key:'invoice_date',  type:'date'},
-  {label:'Échéance',    key:'due_date',      type:'date'},
-  {label:'Montant TTC', key:'_amount_total', type:'number'},
-  {label:'Ouvert',      key:'_amount_open',  type:'number'},
-  {label:'Entreprise',  key:'_admin_name'},
-  {label:'Statut',      key:'status'},
+  {label:'N° facture',    key:'invoice_number'},
+  {label:'Débiteur',      key:'_debtor'},
+  {label:'Émission',      key:'invoice_date',   type:'date'},
+  {label:'Échéance',      key:'due_date',        type:'date'},
+  {label:'Montant TTC',   key:'_amount_total',   type:'number'},
+  {label:'Montant payé',  key:'_amount_paid',    type:'number'},
+  {label:'Montant remis', key:'_amount_remis',   type:'number'},
 ];
 
 async function loadPaytInvoices(){
@@ -2213,25 +2212,43 @@ async function pushEditToPayt(){
 }
 
 function renderPaytInvoicesTable(invoices){
-  const adminMap=Object.fromEntries(paytAdministrations.map(a=>[a.id,a.name]));
-  const rows=invoices.map(inv=>({
-    invoice_number: inv.invoice_number||'—',
-    _debtor:        inv.debtor?.name||inv.debtor_name||inv.debtor_number||'—',
-    invoice_date:   inv.invoice_date||'—',
-    due_date:       inv.due_date||'—',
-    _amount_total:  parseFloat(inv.book_total_amount||inv.total_amount)||0,
-    _amount_open:   parseFloat(inv.book_open_amount||inv.open_amount)||0,
-    _admin_name:    adminMap[inv._administration_id||inv.administration_id]||inv._administration_id||'—',
-    status:         parseFloat(inv.total_amount)<0 ? 'Clôturée' : parseFloat(inv.open_amount)===0 ? 'Payée' : 'En cours',
-  }));
+  // Build avoir map: parent invoice_number → avoir amount
+  const avoirMap={};
+  invoices.forEach(inv=>{
+    const num=String(inv.invoice_number||'');
+    if(num.startsWith('AVOIR-')){
+      const parent=num.slice(6);
+      const amt=Math.abs(parseFloat(inv.book_total_amount||inv.total_amount)||0);
+      avoirMap[parent]=(avoirMap[parent]||0)+amt;
+    }
+  });
+
+  // Exclude credit note rows — their amount is shown inline on the parent row
+  const rows=invoices
+    .filter(inv=>!String(inv.invoice_number||'').startsWith('AVOIR-'))
+    .map(inv=>{
+      const total=parseFloat(inv.book_total_amount||inv.total_amount)||0;
+      const remis=avoirMap[inv.invoice_number]||0;
+      const paid=Math.max(0,Math.round((total-remis)*100)/100);
+      return{
+        invoice_number: inv.invoice_number||'—',
+        _debtor:        inv.debtor?.name||inv.debtor_name||inv.debtor_number||'—',
+        invoice_date:   inv.invoice_date||'—',
+        due_date:       inv.due_date||'—',
+        _amount_total:  total,
+        _amount_paid:   paid,
+        _amount_remis:  remis,
+      };
+    });
+
   const thead=document.querySelector('#paytInvTable thead');
   const tbody=document.querySelector('#paytInvTable tbody');
   thead.innerHTML='<tr>'+PAYT_INV_COLS.map(c=>`<th>${esc(c.label)}</th>`).join('')+'</tr>';
   tbody.innerHTML='';
   rows.forEach(row=>{
     const tr=document.createElement('tr');
-    if(row.status==='Payée') tr.style.background='rgba(50,192,130,0.10)';
-    else if(row.status==='Clôturée') tr.style.background='rgba(245,166,35,0.12)';
+    if(row._amount_remis>0) tr.style.background='rgba(245,166,35,0.12)';
+    else if(row._amount_paid>0&&row._amount_paid===row._amount_total) tr.style.background='rgba(50,192,130,0.10)';
     tr.innerHTML=PAYT_INV_COLS.map(c=>{
       const v=row[c.key];
       if(c.type==='date'&&v&&v!=='—'){const[y,m,d]=String(v).split('-');return `<td style="white-space:nowrap;font-variant-numeric:tabular-nums;">${d||v}/${m||''}/${y||''}</td>`;}
