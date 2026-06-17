@@ -205,7 +205,7 @@ async function run() {
     assert(!('category' in contactCall.body.contacts[0]), 'category should not be in contacts payload');
   });
 
-  await test('category n\'apparaît pas dans le payload invoices', async () => {
+  await test('category = administration_name dans le payload invoices', async () => {
     const calls = captureFetch([
       { ok: true, data: {} },
       { ok: true, data: {} },
@@ -213,7 +213,21 @@ async function run() {
     ]);
     await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ administration_name: 'Acme SA' })] } }), mockRes());
     const invoiceCall = calls.find(c => c.url.includes('/v1/invoices'));
-    assert(!('category' in invoiceCall.body.invoices[0]), 'category should not be in invoices payload');
+    const invoice = invoiceCall.body.invoices[0];
+    assert(invoice.category === 'Acme SA', `Expected category "Acme SA" on invoice, got "${invoice.category}"`);
+  });
+
+  await test('category absente de l\'invoice si administration_name non fourni', async () => {
+    const calls = captureFetch([
+      { ok: true, data: {} },
+      { ok: true, data: {} },
+      { ok: true, data: { errors: {} } },
+    ]);
+    const inv = makeInvoice();
+    delete inv.administration_name;
+    await handler(mockReq({ body: { token: 'tok', invoices: [inv] } }), mockRes());
+    const invoiceCall = calls.find(c => c.url.includes('/v1/invoices'));
+    assert(!('category' in invoiceCall.body.invoices[0]), 'category should not be in invoice when administration_name is missing');
   });
 
   await test('category présente → résultat success=true inchangé', async () => {

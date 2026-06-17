@@ -186,6 +186,7 @@ export default async function handler(req, res) {
           book_amount_open:  String(effectiveOpen),
           amount_open:       String(effectiveOpen),
           currency_code:     inv.currency_code || 'EUR',
+          ...(inv.administration_name && { category: inv.administration_name }),
         };
       }),
     };
