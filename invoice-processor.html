@@ -2104,8 +2104,8 @@ function renderPaytEditTable(){
         if(!_editState[k]) return;
         _editState[k].status=sel.value;
         if(sel.value==='Payée') _editState[k].amountPaid=String(openAmt);
-        else if(sel.value==='Clôturée') _editState[k].amountPaid='0';
-        else _editState[k].amountPaid='';
+        else if(sel.value==='En cours') _editState[k].amountPaid='';
+        // Clôturée : on conserve le montant payé saisi par l'utilisateur
         renderPaytEditTable();
       });
       tdSel.appendChild(sel);
