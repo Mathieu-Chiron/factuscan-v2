@@ -2080,7 +2080,7 @@ function renderPaytEditTable(){
 
     // readonly cells
     const tdNum=document.createElement('td'); tdNum.style.cssText='white-space:nowrap;font-weight:600;'; tdNum.textContent=inv.invoice_number;
-    const tdDeb=document.createElement('td'); tdDeb.textContent=inv.debtor?.name||inv.debtor_name||inv.debtor_number||'—';
+    const tdDeb=document.createElement('td'); tdDeb.textContent=inv._debtor_name||inv.debtor?.name||inv.debtor_name||inv.debtor_number||'—';
     const tdAdm=document.createElement('td'); tdAdm.textContent=adminMap[inv.administration_id||inv._administration_id]||'—';
     const tdTot=document.createElement('td'); tdTot.style.cssText='text-align:right;font-variant-numeric:tabular-nums;'; tdTot.textContent=totalAmt.toFixed(2);
     const tdOpn=document.createElement('td'); tdOpn.style.cssText='text-align:right;font-variant-numeric:tabular-nums;'; tdOpn.textContent=openAmt.toFixed(2);
@@ -2232,7 +2232,7 @@ function renderPaytInvoicesTable(invoices){
       const paid=Math.max(0,Math.round((total-remis)*100)/100);
       return{
         invoice_number: inv.invoice_number||'—',
-        _debtor:        inv.debtor?.name||inv.debtor_name||inv.debtor_number||'—',
+        _debtor:        inv._debtor_name||inv.debtor?.name||inv.debtor_name||inv.debtor_number||'—',
         invoice_date:   inv.invoice_date||'—',
         due_date:       inv.due_date||'—',
         _amount_total:  total,

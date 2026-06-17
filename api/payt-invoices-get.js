@@ -60,6 +60,25 @@ async function fetchInvoicesForAdmin(token, adminId) {
   return all;
 }
 
+async function fetchDebtorsForAdmin(token, adminId) {
+  const all = [];
+  let cursor = null;
+  for (let i = 0; i < 50; i++) {
+    const url = new URL(`${PAYT_BASE}/v1/debtors`);
+    url.searchParams.set('administration_id', adminId);
+    url.searchParams.set('per_page', '500');
+    if (cursor) url.searchParams.set('cursor', cursor);
+    const r = await _fetch(url.toString(), { method: 'GET', headers: AUTH_HEADERS(token) });
+    if (!r.ok) break; // non-blocking — debtors are optional enrichment
+    const payload = await r.json().catch(() => ({}));
+    const page = Array.isArray(payload.data) ? payload.data : [];
+    all.push(...page);
+    cursor = payload.pagination?.cursor;
+    if (!cursor) break;
+  }
+  return all;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -71,7 +90,21 @@ export default async function handler(req, res) {
     const allInvoices = [];
     for (const adminId of adminIds) {
       try {
-        const invoices = await fetchInvoicesForAdmin(token, adminId);
+        const [invoices, debtors] = await Promise.all([
+          fetchInvoicesForAdmin(token, adminId),
+          fetchDebtorsForAdmin(token, adminId),
+        ]);
+        // Build debtor name map keyed by debtor_number and id
+        const debtorMap = {};
+        debtors.forEach(d => {
+          const name = d.name || d.debtor_name || null;
+          if (d.debtor_number) debtorMap[d.debtor_number] = name;
+          if (d.id)            debtorMap[String(d.id)]    = name;
+        });
+        // Enrich each invoice with the resolved debtor name
+        invoices.forEach(inv => {
+          inv._debtor_name = debtorMap[inv.debtor_number] || debtorMap[String(inv.debtor_id || '')] || null;
+        });
         allInvoices.push(...invoices);
       } catch (e) {
         console.error(`[payt-invoices] skipping admin ${adminId}: ${e.message}`);
