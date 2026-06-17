@@ -57,8 +57,11 @@ html,body { overflow:hidden; }
 #nb2-org{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#fff;min-width:0;overflow:hidden;}
 #nb2-org span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 #nb2-nav{display:flex;align-items:center;gap:6px;flex-shrink:0;}
-.btn-ghost-danger{background:transparent;color:rgba(255,140,140,0.90);border:1px solid rgba(255,100,100,0.30);}
-.btn-ghost-danger:hover:not(:disabled){background:rgba(255,100,100,0.18);color:#ffaaaa;}
+.btn-nav{background:rgba(255,255,255,0.12);color:rgba(255,255,255,0.80);border:1px solid rgba(255,255,255,0.18);}
+.btn-nav:hover:not(:disabled){background:rgba(255,255,255,0.22);color:#fff;}
+.btn-nav.active{background:#fff;color:#445d94;border-color:#fff;font-weight:700;}
+.btn-nav-danger{background:#D91F2C;color:#fff;border:1px solid #D91F2C;}
+.btn-nav-danger:hover:not(:disabled){background:#b81824;border-color:#b81824;}
 
 /* UPLOAD */
 #screen-upload{position:fixed;top:76px;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff;transition:opacity .25s;}
@@ -2581,19 +2584,13 @@ function updateAdminBadge(ok, label){
 function setNavButtons(screen){
   const nb=document.getElementById('nb2-nav');
   if(!nb) return;
-  const ghost='btn btn-ghost btn-sm';
-  const danger='btn btn-ghost-danger btn-sm';
-  const maps={
-    upload:`<button class="${ghost}" onclick="showExport()">Mes factures</button><button class="${ghost}" onclick="navigate('/invoice-edit','invoice-edit')">Statuez vos factures</button><button class="${danger}" onclick="signOut()">Déconnexion</button>`,
-    editor:`<button class="${ghost}" id="btnSettings" style="display:none;" onclick="openModal()">Paramètres</button><button class="${ghost}" onclick="navigate('/','upload')">Accueil</button><button class="${ghost}" onclick="showExport()">Mes factures</button><button class="${danger}" onclick="signOut()">Déconnexion</button>`,
-    invoices:`<button class="${ghost}" onclick="navigate('/','upload')">Accueil</button><button class="${ghost}" onclick="navigate('/invoice-processor','editor')">Ajoutez des factures</button><button class="${ghost}" onclick="navigate('/invoice-edit','invoice-edit')">Statuez vos factures</button><button class="${danger}" onclick="signOut()">Déconnexion</button>`,
-    'invoice-edit':`<button class="${ghost}" onclick="navigate('/','upload')">Accueil</button><button class="${ghost}" onclick="navigate('/invoice-processor','editor')">Ajoutez des factures</button><button class="${ghost}" onclick="navigate('/invoices','invoices')">Mes factures</button><button class="${danger}" onclick="signOut()">Déconnexion</button>`,
-  };
-  nb.innerHTML=maps[screen]||maps.upload;
-  if(screen==='editor'){
-    const bs=document.getElementById('btnSettings');
-    if(bs) bs.style.display=sessionStorage.getItem('adminAuth')==='1'?'':'none';
-  }
+  const btn=(label,active,onclick)=>`<button class="btn btn-nav btn-sm${active?' active':''}" onclick="${onclick}">${label}</button>`;
+  nb.innerHTML=
+    btn('Accueil',          screen==='upload',       "navigate('/','upload')")+
+    btn('Ajoutez des factures', screen==='editor',   "navigate('/invoice-processor','editor')")+
+    btn('Statuez vos factures', screen==='invoice-edit', "navigate('/invoice-edit','invoice-edit')")+
+    btn('Vos factures',    screen==='invoices',      "showExport()")+
+    `<button class="btn btn-nav-danger btn-sm" onclick="signOut()">Déconnexion</button>`;
 }
 
 async function loadCompanies(){
