@@ -797,6 +797,8 @@ async function getAuthToken() {
 }
 
 async function signOut() {
+  // Purge non-pushed invoices from DB before logout (token still valid here)
+  await saveToDb([]);
   localStorage.removeItem('factuscan_dataset');
   await _clerkInst?.signOut();
   location.reload();
@@ -2506,6 +2508,7 @@ function doRemove(){
   if(S.cur===i) S.cur=S.invoices.length>0?Math.min(i,S.invoices.length-1):-1;
   else if(S.cur>i) S.cur--;
   closeRemove();
+  saveDataset();
   renderSidebar();updateBar();
   if(S.cur>=0) selectInv(S.cur);
   else{document.getElementById('emptyState').style.display='flex';document.getElementById('fieldsContent').style.display='none';document.getElementById('fieldsFooter').style.display='none';document.getElementById('pdfTitle').textContent='Aucune facture sélectionnée';document.getElementById('pdfTitle').style.color='var(--text3)';document.getElementById('pdfVp').innerHTML='<div class="pdf-placeholder"><svg width="36" height="36" viewBox="0 0 36 36" fill="none" style="opacity:.2;"><path d="M8 4h13l7 7v21H8V4z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M21 4v7h7" stroke="currentColor" stroke-width="1.2"/></svg></div>';}
