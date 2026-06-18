@@ -2166,7 +2166,7 @@ function renderPaytEditTable(){
       const inp=document.createElement('input'); inp.type='number'; inp.min='0'; inp.step='0.01';
       inp.className='form-inp'; inp.style.cssText='font-size:12px;padding:4px 6px;width:100px;text-align:right;';
       inp.value=state.amountPaid; inp.placeholder=openAmt.toFixed(2);
-      inp.addEventListener('change',()=>{ if(_editState[k]) _editState[k].amountPaid=inp.value; });
+      inp.addEventListener('input',()=>{ if(_editState[k]) _editState[k].amountPaid=inp.value; });
       tdAmt.appendChild(inp);
 
       // payment date input
@@ -2191,7 +2191,8 @@ async function pushEditToPayt(){
   const updates=_paytEditRawInvoices
     .filter(inv=>{
       const k=(inv.administration_id||inv._administration_id||'')+'__'+inv.invoice_number;
-      return _editState[k]?.status!=='En cours';
+      const s=_editState[k];
+      return s?.status!=='En cours' || parseFloat(s?.amountPaid)>0;
     })
     .map(inv=>{
       const k=(inv.administration_id||inv._administration_id||'')+'__'+inv.invoice_number;
