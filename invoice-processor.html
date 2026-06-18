@@ -2274,8 +2274,9 @@ function renderPaytInvoicesTable(invoices){
     .filter(inv=>!String(inv.invoice_number||'').startsWith('AVOIR-'))
     .map(inv=>{
       const total=parseFloat(inv.book_total_amount||inv.total_amount)||0;
+      const open=parseFloat(inv.book_open_amount||inv.open_amount||inv.book_amount_open||inv.amount_open)||0;
       const remis=avoirMap[inv.invoice_number]||0;
-      const paid=Math.max(0,Math.round((total-remis)*100)/100);
+      const paid=Math.max(0,Math.round((total-open-remis)*100)/100);
       return{
         invoice_number: inv.invoice_number||'—',
         _creditor:      inv.category||'—',
