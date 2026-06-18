@@ -2,7 +2,7 @@
  * tests/payt-debtor-category.test.js
  *
  * Tests for debtor category injection in api/payt-push.js.
- * When invoices are posted, each debtor must carry category = administration_name
+ * When invoices are posted, each debtor must carry category = creditor_name
  * (the name of the creditor / target company).
  *
  * Run: node tests/payt-debtor-category.test.js
@@ -24,7 +24,7 @@ function mockRes() {
 function makeInvoice(overrides = {}) {
   return {
     administration_id:            'admin_1',
-    administration_name:          'Acme SA',
+    creditor_name:          'Acme SA',
     invoice_number:               'FAC-001',
     invoice_date:                 '2026-01-01',
     invoice_due_date:             '2026-02-01',
@@ -88,31 +88,31 @@ async function run() {
   // ── 1. Catégorie portée par le débiteur ──────────────────────────────────────
   console.log('1. Catégorie injectée dans le payload debtors');
 
-  await test('category = administration_name du payload', async () => {
+  await test('category = creditor_name du payload', async () => {
     const calls = captureFetch([
       { ok: true, data: {} },             // contacts
       { ok: true, data: {} },             // debtors
       { ok: true, data: { errors: {} } }, // invoices
     ]);
-    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ administration_name: 'Acme SA' })] } }), mockRes());
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ creditor_name: 'Acme SA' })] } }), mockRes());
     const debtorCall = calls.find(c => c.url.includes('/v1/debtors'));
     assert(debtorCall, 'debtors call should exist');
     const debtor = debtorCall.body.debtors[0];
     assert(debtor.category === 'Acme SA', `Expected category "Acme SA", got "${debtor.category}"`);
   });
 
-  await test('category absente si administration_name non fourni', async () => {
+  await test('category absente si creditor_name non fourni', async () => {
     const calls = captureFetch([
       { ok: true, data: {} },
       { ok: true, data: {} },
       { ok: true, data: { errors: {} } },
     ]);
     const inv = makeInvoice();
-    delete inv.administration_name;
+    delete inv.creditor_name;
     await handler(mockReq({ body: { token: 'tok', invoices: [inv] } }), mockRes());
     const debtorCall = calls.find(c => c.url.includes('/v1/debtors'));
     const debtor = debtorCall.body.debtors[0];
-    assert(!('category' in debtor), `category should not be set when administration_name is missing, got "${debtor.category}"`);
+    assert(!('category' in debtor), `category should not be set when creditor_name is missing, got "${debtor.category}"`);
   });
 
   await test('category = chaîne vide → non incluse dans le payload', async () => {
@@ -121,10 +121,10 @@ async function run() {
       { ok: true, data: {} },
       { ok: true, data: { errors: {} } },
     ]);
-    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ administration_name: '' })] } }), mockRes());
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ creditor_name: '' })] } }), mockRes());
     const debtorCall = calls.find(c => c.url.includes('/v1/debtors'));
     const debtor = debtorCall.body.debtors[0];
-    assert(!('category' in debtor), `category should not be set when administration_name is empty string`);
+    assert(!('category' in debtor), `category should not be set when creditor_name is empty string`);
   });
 
   // ── 2. Même catégorie pour tous les débiteurs d'une même admin ────────────────
@@ -137,8 +137,8 @@ async function run() {
       { ok: true, data: { errors: {} } },
     ]);
     await handler(mockReq({ body: { token: 'tok', invoices: [
-      makeInvoice({ invoice_number: 'FAC-A', debtor_number: 'DEB001', debtor_identifier: 'DEB001', administration_name: 'Acme SA' }),
-      makeInvoice({ invoice_number: 'FAC-B', debtor_number: 'DEB002', debtor_identifier: 'DEB002', administration_name: 'Acme SA' }),
+      makeInvoice({ invoice_number: 'FAC-A', debtor_number: 'DEB001', debtor_identifier: 'DEB001', creditor_name: 'Acme SA' }),
+      makeInvoice({ invoice_number: 'FAC-B', debtor_number: 'DEB002', debtor_identifier: 'DEB002', creditor_name: 'Acme SA' }),
     ] } }), mockRes());
     const debtorCall = calls.find(c => c.url.includes('/v1/debtors'));
     const debtors = debtorCall.body.debtors;
@@ -154,8 +154,8 @@ async function run() {
       { ok: true, data: { errors: {} } },
     ]);
     await handler(mockReq({ body: { token: 'tok', invoices: [
-      makeInvoice({ invoice_number: 'FAC-A', debtor_number: 'DEB001', administration_name: 'Acme SA' }),
-      makeInvoice({ invoice_number: 'FAC-B', debtor_number: 'DEB001', administration_name: 'Acme SA' }),
+      makeInvoice({ invoice_number: 'FAC-A', debtor_number: 'DEB001', creditor_name: 'Acme SA' }),
+      makeInvoice({ invoice_number: 'FAC-B', debtor_number: 'DEB001', creditor_name: 'Acme SA' }),
     ] } }), mockRes());
     const debtorCall = calls.find(c => c.url.includes('/v1/debtors'));
     assert(debtorCall.body.debtors.length === 1, 'debtors should be deduplicated');
@@ -168,8 +168,8 @@ async function run() {
   await test('2 admins → chaque debtor porte le nom de sa propre admin', async () => {
     const calls = captureFetch(Array(6).fill({ ok: true, data: { errors: {} } }));
     await handler(mockReq({ body: { token: 'tok', invoices: [
-      makeInvoice({ invoice_number: 'FAC-A', administration_id: 'admin_1', administration_name: 'Acme SA' }),
-      makeInvoice({ invoice_number: 'FAC-B', administration_id: 'admin_2', administration_name: 'Beta Corp', debtor_number: 'DEB002', debtor_identifier: 'DEB002' }),
+      makeInvoice({ invoice_number: 'FAC-A', administration_id: 'admin_1', creditor_name: 'Acme SA' }),
+      makeInvoice({ invoice_number: 'FAC-B', administration_id: 'admin_2', creditor_name: 'Beta Corp', debtor_number: 'DEB002', debtor_identifier: 'DEB002' }),
     ] } }), mockRes());
     const debtorCalls = calls.filter(c => c.url.includes('/v1/debtors'));
     assert(debtorCalls.length === 2, `Expected 2 debtors calls, got ${debtorCalls.length}`);
@@ -186,7 +186,7 @@ async function run() {
       { ok: true, data: {} },
       { ok: true, data: { errors: {} } },
     ]);
-    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ administration_name: longName })] } }), mockRes());
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ creditor_name: longName })] } }), mockRes());
     const debtorCall = calls.find(c => c.url.includes('/v1/debtors'));
     assert(debtorCall.body.debtors[0].category === longName, `Expected full name, got "${debtorCall.body.debtors[0].category}"`);
   });
@@ -200,34 +200,34 @@ async function run() {
       { ok: true, data: {} },
       { ok: true, data: { errors: {} } },
     ]);
-    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ administration_name: 'Acme SA' })] } }), mockRes());
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ creditor_name: 'Acme SA' })] } }), mockRes());
     const contactCall = calls.find(c => c.url.includes('/v1/contacts'));
     assert(!('category' in contactCall.body.contacts[0]), 'category should not be in contacts payload');
   });
 
-  await test('category = administration_name dans le payload invoices', async () => {
+  await test('category = creditor_name dans le payload invoices', async () => {
     const calls = captureFetch([
       { ok: true, data: {} },
       { ok: true, data: {} },
       { ok: true, data: { errors: {} } },
     ]);
-    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ administration_name: 'Acme SA' })] } }), mockRes());
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ creditor_name: 'Acme SA' })] } }), mockRes());
     const invoiceCall = calls.find(c => c.url.includes('/v1/invoices'));
     const invoice = invoiceCall.body.invoices[0];
     assert(invoice.category === 'Acme SA', `Expected category "Acme SA" on invoice, got "${invoice.category}"`);
   });
 
-  await test('category absente de l\'invoice si administration_name non fourni', async () => {
+  await test('category absente de l\'invoice si creditor_name non fourni', async () => {
     const calls = captureFetch([
       { ok: true, data: {} },
       { ok: true, data: {} },
       { ok: true, data: { errors: {} } },
     ]);
     const inv = makeInvoice();
-    delete inv.administration_name;
+    delete inv.creditor_name;
     await handler(mockReq({ body: { token: 'tok', invoices: [inv] } }), mockRes());
     const invoiceCall = calls.find(c => c.url.includes('/v1/invoices'));
-    assert(!('category' in invoiceCall.body.invoices[0]), 'category should not be in invoice when administration_name is missing');
+    assert(!('category' in invoiceCall.body.invoices[0]), 'category should not be in invoice when creditor_name is missing');
   });
 
   await test('category présente → résultat success=true inchangé', async () => {
@@ -237,7 +237,7 @@ async function run() {
       { ok: true, data: { errors: {} } },
     ]);
     const res = mockRes();
-    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ administration_name: 'Acme SA' })] } }), res);
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ creditor_name: 'Acme SA' })] } }), res);
     assert(res._body?.results?.['FAC-001']?.success === true, 'Invoice should succeed with category set');
   });
 

@@ -267,6 +267,32 @@ async function run() {
     assert(calls[0].body.invoices.length === 2);
   });
 
+  // ── 6. Cas 10 — Scénario deux phases ────────────────────────────────────────
+  console.log('\n6. Cas 10 — Scénario deux phases (push partiel → invoice-edit Clôturée)');
+
+  await test('Cas 10b — Phase 2 : Clôturée via invoice-edit, solde restant=600, avoir=-600', async () => {
+    // Phase 1 (push) : total=1000, amountPaid=400, book_amount_open=600 envoyé à PAYT
+    // Phase 2 (invoice-edit) : l'utilisateur voit open_amount=600, entre amount_paid=0,
+    // marque Clôturée → avoir = open_amount - amount_paid = 600 - 0 = 600
+    const calls = captureFetch([
+      { ok: true, data: { errors: {} } },  // POST /v1/invoices (update open→0)
+      { ok: true, data: { errors: {} } },  // POST /v1/invoices (credit note -600)
+    ]);
+    const res = mockRes();
+    await handler(mockReq({ body: { token: 'tok', updates: [makeUpdate({
+      new_status:  'Clôturée',
+      open_amount: '600',
+      amount_paid: '0',
+    })] } }), res);
+    assert(calls.length === 2, `Expected 2 calls, got ${calls.length}`);
+    const inv = calls[0].body.invoices[0];
+    assert(inv.book_amount_open === '0', `Invoice doit être soldée (open=0), got ${inv.book_amount_open}`);
+    const cn = calls[1].body.invoices[0];
+    assert(cn.book_amount_total === '-600', `Avoir doit être -600, got ${cn.book_amount_total}`);
+    assert(cn.book_amount_open  === '0',   `Avoir doit avoir open=0`);
+    assert(res._body?.results?.['FAC-001']?.credit_note, 'credit_note doit être renseigné');
+  });
+
   // ── Résumé ──────────────────────────────────────────────────────────────────
   console.log(`\n${'─'.repeat(40)}`);
   console.log(`Résultat : ${passed} passé(s), ${failed} échoué(s)`);

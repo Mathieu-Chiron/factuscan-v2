@@ -361,7 +361,7 @@ html,body { overflow:hidden; }
     </svg>
     <div class="dz-main">Uploadez vos factures PDF</div>
     <div class="dz-hint">Glissez-déposez ou cliquez pour sélectionner</div>
-    <div class="dz-limit">Maximum 20 fichiers à la fois</div>
+    <div class="dz-limit">Maximum 100 fichiers à la fois</div>
   </div>
   <input type="file" id="fi1" multiple accept=".pdf" style="display:none;" onchange="handleFiles(this.files)"/>
   <div id="restoreBtn" style="display:none;margin-top:1rem;width:min(500px,90vw);">
@@ -763,7 +763,7 @@ function getDebtorCodeState(data,debtorType){
   return{code,locked:true,requireType:false,vatRequired:false,showDebtorVatField:false};
 }
 
-const BATCH_LIMIT=20,TOTAL_LIMIT=100;
+const BATCH_LIMIT=100,TOTAL_LIMIT=100;
 function filterBatch(existingCount,newCount){if(newCount>BATCH_LIMIT)return{batchExceeded:true,totalExceeded:false,accepted:0};const available=TOTAL_LIMIT-existingCount;if(newCount>available)return{batchExceeded:false,totalExceeded:true,accepted:Math.max(0,available)};return{batchExceeded:false,totalExceeded:false,accepted:newCount};}
 function showBatchLimitPopup(msg){document.getElementById('batchLimitMsg').textContent=msg;document.getElementById('batchLimitBg').classList.add('show');setTimeout(()=>document.getElementById('batchLimitOk').focus(),50);}
 function closeBatchLimitPopup(){document.getElementById('batchLimitBg').classList.remove('show');}

@@ -268,6 +268,85 @@ async function run() {
     assert(calls.length === 6, `Expected 6 calls, got ${calls.length}`);
   });
 
+  // ── 6. Calcul des montants — Cas 1, 2, 3, 5, 10a ───────────────────────────
+  console.log('\n6. Calcul des montants (Cas 1, 2, 3, 5, 10a)');
+
+  await test('Cas 1 — aucun paiement : book_amount_open = book_amount_total', async () => {
+    const calls = captureFetch([{ ok: true, data: {} }, { ok: true, data: {} }, { ok: true, data: { errors: {} } }]);
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({
+      invoice_total_amount_inc_vat: '1000',
+      invoice_open_amount_inc_vat:  '1000',
+      amount_paid: '0',
+    })] } }), mockRes());
+    const inv = calls[2].body.invoices[0];
+    assert(inv.book_amount_open  === '1000', `Expected 1000, got ${inv.book_amount_open}`);
+    assert(inv.book_amount_total === '1000');
+    assert(inv.book_amount_open  === inv.book_amount_total, 'open doit égaler total sans paiement');
+  });
+
+  await test('Cas 2 — paiement partiel (réduit par le frontend) : book_amount_open = 600', async () => {
+    // total=1000, amountPaid=400 appliqué par le frontend → invoice_open_amount_inc_vat=600
+    const calls = captureFetch([{ ok: true, data: {} }, { ok: true, data: {} }, { ok: true, data: { errors: {} } }]);
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({
+      invoice_total_amount_inc_vat: '1000',
+      invoice_open_amount_inc_vat:  '600',
+      amount_paid: '400',
+    })] } }), mockRes());
+    const inv = calls[2].body.invoices[0];
+    assert(inv.book_amount_open  === '600',  `Expected 600, got ${inv.book_amount_open}`);
+    assert(inv.book_amount_total === '1000', `Expected 1000 total, got ${inv.book_amount_total}`);
+  });
+
+  await test('Cas 3 — paiement total : book_amount_open = 0', async () => {
+    // total=1000, amountPaid=1000 appliqué par le frontend → invoice_open_amount_inc_vat=0
+    const calls = captureFetch([{ ok: true, data: {} }, { ok: true, data: {} }, { ok: true, data: { errors: {} } }]);
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({
+      invoice_total_amount_inc_vat: '1000',
+      invoice_open_amount_inc_vat:  '0',
+      amount_paid: '1000',
+    })] } }), mockRes());
+    const inv = calls[2].body.invoices[0];
+    assert(inv.book_amount_open  === '0',    `Expected 0, got ${inv.book_amount_open}`);
+    assert(inv.book_amount_total === '1000', `Expected 1000 total, got ${inv.book_amount_total}`);
+  });
+
+  await test('Cas 5 — Clôturée + paiement partiel (frontend) : avoir = effectiveOpen = 600', async () => {
+    // total=1000, amountPaid=400 → invoice_open_amount_inc_vat=600 → avoir=-600
+    const calls = captureFetch([
+      { ok: true, data: {} },             // contacts
+      { ok: true, data: {} },             // debtors
+      { ok: true, data: { errors: {} } }, // invoices
+      { ok: true, data: { errors: {} } }, // credit note
+      { ok: true, data: { errors: {} } }, // re-close
+    ]);
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({
+      payt_status:                  'Clôturée',
+      invoice_total_amount_inc_vat: '1000',
+      invoice_open_amount_inc_vat:  '600',
+      amount_paid: '400',
+    })] } }), mockRes());
+    assert(calls.length === 5, `Expected 5 calls, got ${calls.length}`);
+    const cn = calls[3].body.invoices[0];
+    assert(cn.book_amount_total === '-600', `Expected avoir=-600, got ${cn.book_amount_total}`);
+    assert(cn.book_amount_open  === '0',   `Avoir book_amount_open doit être 0`);
+    const reclose = calls[4].body.invoices[0];
+    assert(reclose.book_amount_open === '0', 'Re-close doit avoir open=0');
+  });
+
+  await test('Cas 10a — Phase 1 (push partiel) : book_amount_open = 600 envoyé à PAYT', async () => {
+    // Scénario deux phases : upload avec paiement partiel de 400 → PAYT voit open=600
+    // Phase 2 (Clôturée via invoice-edit) testée dans payt-invoices-update.test.js
+    const calls = captureFetch([{ ok: true, data: {} }, { ok: true, data: {} }, { ok: true, data: { errors: {} } }]);
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({
+      invoice_total_amount_inc_vat: '1000',
+      invoice_open_amount_inc_vat:  '600',
+      amount_paid: '400',
+    })] } }), mockRes());
+    const inv = calls[2].body.invoices[0];
+    assert(inv.book_amount_open  === '600',  `Expected open=600, got ${inv.book_amount_open}`);
+    assert(inv.book_amount_total === '1000', `Total doit rester 1000`);
+  });
+
   // ── Résumé ──────────────────────────────────────────────────────────────────
   console.log(`\n${'─'.repeat(40)}`);
   console.log(`Résultat : ${passed} passé(s), ${failed} échoué(s)`);
