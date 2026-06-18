@@ -913,7 +913,7 @@ function renderSidebar() {
   const editable=S.invoices.filter(sbEditable);
   const active=editable.filter(inv=>inv.status!=='skipped');
   const skipped=editable.filter(inv=>inv.status==='skipped');
-  document.getElementById('sbCount').textContent=`(${editable.length})`;
+  document.getElementById('sbCount').textContent=`(${active.length})`;
   S.invoices.forEach((inv,i)=>{
     if(!sbEditable(inv)) return; // verrouillée + restaurée → export uniquement
     if(inv.status==='skipped') return; // rendered in ignored section
@@ -2406,7 +2406,7 @@ function closeSkipWarnAndExport(){closeSkipWarn();pushAndExport();}
 
 async function pushAndExport(){
   const toCreate=S.invoices.filter(inv=>inv.status==='validated'&&inv.targetCompany&&!inv.fromRestore);
-  if(!toCreate.length){navigate('/invoices','invoices');return;}
+  if(!toCreate.length){navigate('/invoice-processor','editor');return;}
 
   const btn=document.getElementById('btnValidate');
   if(btn){btn.disabled=true;btn.textContent='Envoi vers PAYT…';}
