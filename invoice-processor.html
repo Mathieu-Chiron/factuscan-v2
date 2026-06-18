@@ -2730,6 +2730,8 @@ async function autoRestore(){
         }
       }
     }
+    // Ne pas restaurer les factures déjà envoyées avec succès — elles sont dans PAYT
+    snap=snap.filter(d=>d.pushStatus!=='success');
     if(!snap.length) return;
     snap.forEach(d=>{
       S.invoices.push({fileName:d.fileName,pdfUrl:d.pdfUrl||null,status:d.status,data:d.data,errors:d.errors||{},
