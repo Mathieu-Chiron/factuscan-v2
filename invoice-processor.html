@@ -1999,6 +1999,7 @@ function dlBlob(b,n){const a=document.createElement('a');a.href=URL.createObject
 /* ══ PAYT INVOICE LIST ═══════════════════════════════ */
 const PAYT_INV_COLS=[
   {label:'N° facture',    key:'invoice_number'},
+  {label:'Créancier',     key:'_creditor'},
   {label:'Débiteur',      key:'_debtor'},
   {label:'Émission',      key:'invoice_date',   type:'date'},
   {label:'Échéance',      key:'due_date',        type:'date'},
@@ -2277,6 +2278,7 @@ function renderPaytInvoicesTable(invoices){
       const paid=Math.max(0,Math.round((total-remis)*100)/100);
       return{
         invoice_number: inv.invoice_number||'—',
+        _creditor:      inv.category||'—',
         _debtor:        inv._debtor_name||inv.debtor?.name||inv.debtor_name||inv.debtor_number||'—',
         invoice_date:   inv.invoice_date||'—',
         due_date:       inv.due_date||'—',
