@@ -2264,6 +2264,8 @@ async function pushEditToPayt(){
     document.getElementById('paytEditSummary').textContent=`${ok} envoyée${ok!==1?'s':''} avec succès${ko?`, ${ko} erreur${ko!==1?'s':''}`:''}.`;
     // Invalidate cache so /invoices reloads fresh data
     _paytInvoicesCache=null;
+    // Reload invoice-edit table from PAYT to reflect updated open amounts
+    if(ok>0) await loadPaytInvoicesEdit();
   }catch(e){
     document.getElementById('paytEditSummary').textContent=`Erreur réseau : ${e.message}`;
   }finally{
