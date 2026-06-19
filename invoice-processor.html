@@ -1779,11 +1779,18 @@ function _showScreen(name){
   } else if(name==='editor'){
     document.getElementById('screen-export').classList.remove('show');
     document.getElementById('screen-invoice-edit').classList.remove('show');
-    document.getElementById('screen-main').classList.add('in');
-    renderSidebar();updateBar();
-    const curOk=S.cur>=0&&S.invoices[S.cur]&&sbEditable(S.invoices[S.cur]);
-    if(curOk) selectInv(S.cur);
-    else{const fi=S.invoices.findIndex(sbEditable);if(fi>=0) selectInv(fi);}
+    if(S.invoices.length===0){
+      // Aucune facture en cours — afficher l'écran d'upload
+      document.getElementById('screen-main').classList.remove('in');
+      const su=document.getElementById('screen-upload');
+      su.style.display='';setTimeout(()=>su.classList.remove('out'),10);
+    } else {
+      document.getElementById('screen-main').classList.add('in');
+      renderSidebar();updateBar();
+      const curOk=S.cur>=0&&S.invoices[S.cur]&&sbEditable(S.invoices[S.cur]);
+      if(curOk) selectInv(S.cur);
+      else{const fi=S.invoices.findIndex(sbEditable);if(fi>=0) selectInv(fi);}
+    }
   } else {
     document.getElementById('screen-export').classList.remove('show');
     document.getElementById('screen-invoice-edit').classList.remove('show');
