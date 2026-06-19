@@ -243,6 +243,7 @@ export default async function handler(req, res) {
                 book_amount_open:  '0',
                 amount_open:       '0',
                 currency_code:     inv.currency_code || 'EUR',
+                sent_at:           new Date().toISOString(),
               }],
             };
             console.log(`[payt-push ${ts()}] CREDIT NOTE payload:`, JSON.stringify(cnPayload));

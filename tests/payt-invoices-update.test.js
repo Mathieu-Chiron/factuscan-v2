@@ -173,6 +173,24 @@ async function run() {
     assert(calls.length === 1, `Expected 1 call (no credit note), got ${calls.length}`);
   });
 
+  await test('credit note contient sent_at au format ISO 8601', async () => {
+    const calls = captureFetch([
+      { ok: true, data: { errors: {} } },
+      { ok: true, data: { errors: {} } },
+    ]);
+    await handler(mockReq({ body: { token: 'tok', updates: [makeUpdate({ new_status: 'Clôturée', open_amount: '500', amount_paid: '0' })] } }), mockRes());
+    const cn = calls[1].body.invoices[0];
+    assert(typeof cn.sent_at === 'string', 'sent_at doit être une chaîne');
+    assert(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(cn.sent_at), `sent_at doit être ISO 8601 UTC, got "${cn.sent_at}"`);
+  });
+
+  await test('sent_at absent sur la facture de mise à jour (non avoir)', async () => {
+    const calls = captureFetch([{ ok: true, data: { errors: {} } }]);
+    await handler(mockReq({ body: { token: 'tok', updates: [makeUpdate({ new_status: 'En cours', amount_paid: '200' })] } }), mockRes());
+    const inv = calls[0].body.invoices[0];
+    assert(!('sent_at' in inv), `sent_at ne doit pas être présent sur une facture normale`);
+  });
+
   await test('numéro avoir contient le numéro de facture', async () => {
     const calls = captureFetch([
       { ok: true, data: { errors: {} } },

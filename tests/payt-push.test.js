@@ -310,6 +310,27 @@ async function run() {
     assert(inv.book_amount_total === '1000', `Expected 1000 total, got ${inv.book_amount_total}`);
   });
 
+  await test('credit note contient sent_at au format ISO 8601', async () => {
+    const calls = captureFetch([
+      { ok: true, data: {} },
+      { ok: true, data: {} },
+      { ok: true, data: { errors: {} } },
+      { ok: true, data: { errors: {} } }, // credit note
+      { ok: true, data: { errors: {} } }, // re-close
+    ]);
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ payt_status: 'Clôturée', invoice_open_amount_inc_vat: '800' })] } }), mockRes());
+    const cn = calls[3].body.invoices[0];
+    assert(typeof cn.sent_at === 'string', 'sent_at doit être une chaîne');
+    assert(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(cn.sent_at), `sent_at doit être ISO 8601 UTC, got "${cn.sent_at}"`);
+  });
+
+  await test('sent_at absent sur les factures normales (non avoir)', async () => {
+    const calls = captureFetch([{ ok: true, data: {} }, { ok: true, data: {} }, { ok: true, data: { errors: {} } }]);
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice()] } }), mockRes());
+    const inv = calls[2].body.invoices[0];
+    assert(!('sent_at' in inv), `sent_at ne doit pas être présent sur une facture normale`);
+  });
+
   await test('Cas 5 — Clôturée + paiement partiel (frontend) : avoir = effectiveOpen = 600', async () => {
     // total=1000, amountPaid=400 → invoice_open_amount_inc_vat=600 → avoir=-600
     const calls = captureFetch([

@@ -126,6 +126,7 @@ export default async function handler(req, res) {
                   book_amount_open:  '0',
                   amount_open:       '0',
                   currency_code:     u.currency_code || 'EUR',
+                  sent_at:           new Date().toISOString(),
                 }],
               }),
             });
