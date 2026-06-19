@@ -213,7 +213,7 @@ html,body { overflow:hidden; }
 .exp-table{width:100%;border-collapse:collapse;font-size:12px;}
 .exp-table th{padding:8px 10px;font-weight:600;color:var(--text2);text-align:left;border-bottom:1px solid var(--bd);background:var(--bg2);white-space:nowrap;cursor:pointer;user-select:none;font-size:10px;text-transform:uppercase;letter-spacing:.04em;}
 .exp-table th:hover{color:var(--navy);background:#eaecef;}
-.exp-table th .sort-icon{font-size:1.1em;color:var(--text3);vertical-align:middle;line-height:1;}
+.exp-table th .sort-icon{font-size:1.21em;color:var(--navy);vertical-align:middle;line-height:1;}
 .exp-table th.sort-asc .sort-icon::after{content:' ↑';}
 .exp-table th.sort-desc .sort-icon::after{content:' ↓';}
 .exp-table th:not(.sort-asc):not(.sort-desc) .sort-icon::after{content:' ↕';opacity:0.3;}
@@ -2010,6 +2010,7 @@ const PAYT_INV_COLS=[
   {label:'N° facture',    key:'invoice_number'},
   {label:'Créancier',     key:'_creditor'},
   {label:'Débiteur',      key:'_debtor'},
+  {label:'Cabinet',       key:'_cabinet'},
   {label:'Émission',      key:'invoice_date',   type:'date'},
   {label:'Échéance',      key:'due_date',        type:'date'},
   {label:'Montant TTC',   key:'_amount_total',   type:'number'},
@@ -2091,8 +2092,9 @@ function renderPaytEditTable(){
   const today=new Date().toISOString().slice(0,10);
   const EDIT_SORT_COLS=[
     {label:'N° facture', key:'invoice_number'},
+    {label:'Créancier',  key:'_creditor'},
     {label:'Débiteur',   key:'_debtor_name'},
-    {label:'Entreprise', key:'_admin_name'},
+    {label:'Agence',     key:'_admin_name'},
     {label:'Montant TTC',key:'_total',  right:true},
     {label:'Ouvert',     key:'_open',   right:true},
   ];
@@ -2104,6 +2106,7 @@ function renderPaytEditTable(){
       let av,bv;
       if(_paytEditSortCol==='_total'){av=parseFloat(a.book_total_amount||a.total_amount)||0;bv=parseFloat(b.book_total_amount||b.total_amount)||0;}
       else if(_paytEditSortCol==='_open'){av=parseFloat(a.book_open_amount||a.open_amount)||0;bv=parseFloat(b.book_open_amount||b.open_amount)||0;}
+      else if(_paytEditSortCol==='_creditor'){av=a.category||'';bv=b.category||'';}
       else if(_paytEditSortCol==='_debtor_name'){av=a._debtor_name||a.debtor_name||a.debtor_number||'';bv=b._debtor_name||b.debtor_name||b.debtor_number||'';}
       else if(_paytEditSortCol==='_admin_name'){av=adminMap[a.administration_id||a._administration_id]||'';bv=adminMap[b.administration_id||b._administration_id]||'';}
       else{av=a[_paytEditSortCol]??'';bv=b[_paytEditSortCol]??'';}
@@ -2135,6 +2138,7 @@ function renderPaytEditTable(){
 
     // readonly cells
     const tdNum=document.createElement('td'); tdNum.style.cssText='white-space:nowrap;font-weight:600;'; tdNum.textContent=inv.invoice_number;
+    const tdCrd=document.createElement('td'); tdCrd.textContent=inv.category||'—';
     const tdDeb=document.createElement('td'); tdDeb.textContent=inv._debtor_name||inv.debtor?.name||inv.debtor_name||inv.debtor_number||'—';
     const tdAdm=document.createElement('td'); tdAdm.textContent=adminMap[inv.administration_id||inv._administration_id]||'—';
     const tdTot=document.createElement('td'); tdTot.style.cssText='text-align:right;font-variant-numeric:tabular-nums;'; tdTot.textContent=totalAmt.toFixed(2);
@@ -2189,7 +2193,7 @@ function renderPaytEditTable(){
     // result cell
     const tdRes=document.createElement('td'); tdRes.dataset.result=k; tdRes.style.cssText='font-size:11px;color:var(--muted);'; tdRes.textContent='—';
 
-    [tdNum,tdDeb,tdAdm,tdTot,tdOpn,tdSel,tdAmt,tdDate,tdRes].forEach(td=>tr.appendChild(td));
+    [tdNum,tdCrd,tdDeb,tdAdm,tdTot,tdOpn,tdSel,tdAmt,tdDate,tdRes].forEach(td=>tr.appendChild(td));
     tbody.appendChild(tr);
   });
 }
@@ -2280,6 +2284,7 @@ function renderPaytInvoicesTable(invoices){
   });
 
   // Exclude credit note rows — their amount is shown inline on the parent row
+  const _adminMapInv=Object.fromEntries(paytAdministrations.map(a=>[a.id,a.name]));
   const rows=invoices
     .filter(inv=>!String(inv.invoice_number||'').startsWith('AVOIR-'))
     .map(inv=>{
@@ -2291,6 +2296,7 @@ function renderPaytInvoicesTable(invoices){
         invoice_number: inv.invoice_number||'—',
         _creditor:      inv.category||'—',
         _debtor:        inv._debtor_name||inv.debtor?.name||inv.debtor_name||inv.debtor_number||'—',
+        _cabinet:       _adminMapInv[inv.administration_id||inv._administration_id]||'—',
         invoice_date:   inv.invoice_date||'—',
         due_date:       inv.due_date||'—',
         _amount_total:  total,
