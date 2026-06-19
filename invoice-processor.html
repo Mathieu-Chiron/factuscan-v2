@@ -820,7 +820,78 @@ async function initClerk() {
 
     // v4: data-clerk-publishable-key causes auto-init; window.Clerk is already an instance
     _clerkInst = window.Clerk;
-    await _clerkInst.load();
+    await _clerkInst.load({ localization: {
+      locale: 'fr-FR',
+      socialButtonsBlockButton: 'Continuer avec {{provider|titleize}}',
+      dividerText: 'ou',
+      formFieldLabel__emailAddress: 'Adresse e-mail',
+      formFieldLabel__password: 'Mot de passe',
+      formFieldLabel__newPassword: 'Nouveau mot de passe',
+      formFieldLabel__confirmPassword: 'Confirmer le mot de passe',
+      formFieldLabel__firstName: 'Prénom',
+      formFieldLabel__lastName: 'Nom',
+      formButtonPrimary: 'Continuer',
+      backButton: 'Retour',
+      footerActionLink__useAnotherMethod: 'Utiliser une autre méthode',
+      signIn: {
+        start: {
+          title: 'Se connecter',
+          subtitle: 'pour continuer sur {{applicationName}}',
+          actionText: 'Pas de compte ?',
+          actionLink: "S'inscrire",
+        },
+        password: {
+          title: 'Entrez votre mot de passe',
+          subtitle: 'pour continuer sur {{applicationName}}',
+          actionLink: 'Mot de passe oublié ?',
+        },
+        forgotPassword: {
+          title: 'Mot de passe oublié ?',
+          formTitle: 'Code de réinitialisation',
+          formSubtitle: 'Entrez le code envoyé à votre adresse e-mail',
+          resendButton: 'Renvoyer le code',
+        },
+        resetPassword: {
+          title: 'Réinitialiser le mot de passe',
+          formButtonPrimary: 'Réinitialiser le mot de passe',
+          successMessage: 'Votre mot de passe a été réinitialisé avec succès.',
+        },
+        emailCode: {
+          title: 'Vérifiez votre e-mail',
+          subtitle: 'pour continuer sur {{applicationName}}',
+          formTitle: 'Code de vérification',
+          formSubtitle: 'Entrez le code envoyé à votre adresse e-mail',
+          resendButton: 'Renvoyer le code',
+        },
+        alternativeMethods: {
+          title: 'Utiliser une autre méthode',
+          blockButton__password: 'Se connecter avec le mot de passe',
+          blockButton__emailCode: 'Envoyer le code à {{identifier}}',
+          blockButton__emailLink: 'Envoyer un lien à {{identifier}}',
+        },
+      },
+      signUp: {
+        start: {
+          title: 'Créer un compte',
+          subtitle: 'pour continuer sur {{applicationName}}',
+          actionText: 'Vous avez un compte ?',
+          actionLink: 'Se connecter',
+        },
+        emailCode: {
+          title: 'Vérifiez votre e-mail',
+          subtitle: 'pour continuer sur {{applicationName}}',
+          formTitle: 'Code de vérification',
+          formSubtitle: 'Entrez le code envoyé à votre adresse e-mail',
+          resendButton: 'Renvoyer le code',
+        },
+        continue: {
+          title: 'Complétez votre profil',
+          subtitle: 'pour continuer sur {{applicationName}}',
+          actionText: 'Vous avez un compte ?',
+          actionLink: 'Se connecter',
+        },
+      },
+    } });
 
     if (_clerkInst.user) {
       USER_ID = _clerkInst.user.id;
