@@ -2010,7 +2010,7 @@ const PAYT_INV_COLS=[
   {label:'N° facture',    key:'invoice_number'},
   {label:'Créancier',     key:'_creditor'},
   {label:'Débiteur',      key:'_debtor'},
-  {label:'Cabinet',       key:'_cabinet'},
+  {label:'Agence',        key:'_cabinet'},
   {label:'Émission',      key:'invoice_date',   type:'date'},
   {label:'Échéance',      key:'due_date',        type:'date'},
   {label:'Montant TTC',   key:'_amount_total',   type:'number'},
@@ -2277,7 +2277,9 @@ function renderPaytInvoicesTable(invoices){
   invoices.forEach(inv=>{
     const num=String(inv.invoice_number||'');
     if(num.startsWith('AVOIR-')){
-      const parent=num.slice(6);
+      // Formats: "AVOIR-FAC-001" (push) ou "AVOIR-FAC-001-1718774400000" (invoice-edit, avec timestamp ms)
+      const rawParent=num.slice(6);
+      const parent=rawParent.replace(/-\d{13}$/, '');
       const amt=Math.abs(parseFloat(inv.book_total_amount||inv.total_amount)||0);
       avoirMap[parent]=(avoirMap[parent]||0)+amt;
     }
