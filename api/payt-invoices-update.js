@@ -110,7 +110,7 @@ export default async function handler(req, res) {
           // Credit note covers only the unpaid remainder (open - partial payment received)
           const avoirAmount = Math.max(0, amountPaid > 0 ? openAmount - amountPaid : openAmount);
           if (avoirAmount === 0) continue;
-          const creditNumber = `AVOIR-${u.invoice_number}-${Date.now()}`;
+          const creditNumber = `AVOIR-${u.invoice_number}`;
           try {
             const cnr = await fetchWithRetry(`${PAYT_BASE}/v1/invoices`, {
               method: 'POST', headers,

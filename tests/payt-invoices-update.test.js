@@ -201,18 +201,14 @@ async function run() {
     assert(cnNumber.includes('FAC-001'), `Credit note number should include invoice number, got ${cnNumber}`);
   });
 
-  await test('numéro avoir unique à chaque appel (timestamp)', async () => {
-    const numbers = [];
-    for (let i = 0; i < 2; i++) {
-      const calls = captureFetch([
-        { ok: true, data: { errors: {} } },
-        { ok: true, data: { errors: {} } },
-      ]);
-      await handler(mockReq({ body: { token: 'tok', updates: [makeUpdate({ new_status: 'Clôturée', open_amount: '500', amount_paid: '0' })] } }), mockRes());
-      numbers.push(calls[1].body.invoices[0].invoice_number);
-      await new Promise(r => setTimeout(r, 2));
-    }
-    assert(numbers[0] !== numbers[1], `Credit note numbers should be unique: ${numbers[0]} vs ${numbers[1]}`);
+  await test('numéro avoir = AVOIR-{invoice_number} (sans timestamp)', async () => {
+    const calls = captureFetch([
+      { ok: true, data: { errors: {} } },
+      { ok: true, data: { errors: {} } },
+    ]);
+    await handler(mockReq({ body: { token: 'tok', updates: [makeUpdate({ new_status: 'Clôturée', open_amount: '500', amount_paid: '0' })] } }), mockRes());
+    const cnNumber = calls[1].body.invoices[0].invoice_number;
+    assert(cnNumber === 'AVOIR-FAC-001', `Expected AVOIR-FAC-001, got ${cnNumber}`);
   });
 
   // ── 4. Erreurs upstream ─────────────────────────────────────────────────────
