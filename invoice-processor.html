@@ -2484,6 +2484,12 @@ async function pushAndExport(){
     console.error('[pushAndExport]',e);
   }
 
+  // Retirer du dataset les factures envoyées avec succès — elles sont dans PAYT,
+  // le cache local doit refléter uniquement les factures non envoyées.
+  S.invoices=S.invoices.filter(inv=>inv.pushStatus!=='success');
+  if(S.cur>=S.invoices.length) S.cur=S.invoices.length>0?S.invoices.length-1:-1;
+  saveDataset();
+
   if(btn){btn.disabled=false;btn.textContent='Envoyer sur PAYT →';}
   navigate('/invoices','invoices');
 }
