@@ -24,6 +24,7 @@
 // }
 
 import { ProxyAgent } from 'undici';
+import { sendAlert } from './_alert.js';
 
 const PAYT_BASE = process.env.PAYT_PROXY_URL || 'https://api.paytsoftware.com/api';
 const PROXY_SECRET = process.env.PROXY_SECRET;
@@ -298,9 +299,23 @@ export default async function handler(req, res) {
         }
       }
     } catch (e) {
+      await sendAlert({ subject: 'Erreur réseau PAYT (factures)', text: e?.message || String(e), source: 'payt-push/invoices' });
       batch.forEach(inv => { results[inv.invoice_number].errors.push('Impossible de joindre PAYT (factures)'); });
     }
   }
 
+  // Alert on errors/warnings
+  const failed = Object.entries(results).filter(([, r]) => r.errors.length > 0);
+  const warned = Object.entries(results).filter(([, r]) => r.warnings.length > 0);
+  if (failed.length > 0) {
+    const lines = failed.map(([num, r]) => `${num}: ${r.errors.join(', ')}`).join('
+');
+    await sendAlert({ subject: `${failed.length} facture(s) rejetée(s) par PAYT`, text: lines, level: 'warning', source: 'payt-push' });
+  }
+  if (warned.length > 0) {
+    const lines = warned.map(([num, r]) => `${num}: ${r.warnings.join(', ')}`).join('
+');
+    await sendAlert({ subject: `${warned.length} avoir(s) non créé(s)`, text: lines, level: 'warning', source: 'payt-push' });
+  }
   return res.status(200).json({ results });
 }

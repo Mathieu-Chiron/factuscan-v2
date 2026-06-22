@@ -8,6 +8,12 @@
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/((?!api/).*)", "destination": "/invoice-processor.html" }
   ],
+  "crons": [
+    {
+      "path": "/api/cron-daily",
+      "schedule": "0 7 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
