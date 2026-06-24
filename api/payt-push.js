@@ -308,13 +308,11 @@ export default async function handler(req, res) {
   const failed = Object.entries(results).filter(([, r]) => r.errors.length > 0);
   const warned = Object.entries(results).filter(([, r]) => r.warnings.length > 0);
   if (failed.length > 0) {
-    const lines = failed.map(([num, r]) => `${num}: ${r.errors.join(', ')}`).join('
-');
+    const lines = failed.map(([num, r]) => `${num}: ${r.errors.join(', ')}`).join('\n');
     await sendAlert({ subject: `${failed.length} facture(s) rejetée(s) par PAYT`, text: lines, level: 'warning', source: 'payt-push' });
   }
   if (warned.length > 0) {
-    const lines = warned.map(([num, r]) => `${num}: ${r.warnings.join(', ')}`).join('
-');
+    const lines = warned.map(([num, r]) => `${num}: ${r.warnings.join(', ')}`).join('\n');
     await sendAlert({ subject: `${warned.length} avoir(s) non créé(s)`, text: lines, level: 'warning', source: 'payt-push' });
   }
   return res.status(200).json({ results });
