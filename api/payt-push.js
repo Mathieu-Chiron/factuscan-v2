@@ -218,11 +218,15 @@ export default async function handler(req, res) {
         console.log(`[payt-push ${ts()}] cloturee batch size: ${clotureeeBatch.length}`);
 
         for (const inv of clotureeeBatch) {
-          // effectiveOpen is already reduced by amountPaid by the frontend (applyAmountPaid).
-          // It represents the remaining balance after any partial payment — exactly the avoir amount.
+          // ── CONVENTION (opposée à payt-invoices-update.js — ne pas harmoniser à l'aveugle) ──
+          // Ici, invoice_open_amount_inc_vat arrive DÉJÀ NET du paiement partiel : le frontend
+          // (applyAmountPaid) envoie open = (open brut − amount_paid). L'avoir vaut donc
+          // effectiveOpen TEL QUEL. NE PAS resoustraire amount_paid (double déduction → avoir
+          // trop petit, solde résiduel non soldé). amount_paid n'est conservé que pour le log.
+          // À l'inverse, payt-invoices-update.js reçoit l'open BRUT et soustrait côté serveur.
           const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
           const amountPaid    = parseFloat(inv.amount_paid) || 0;
-          const avoirAmount   = effectiveOpen; // = originalOpen - amountPaid (reduced by frontend)
+          const avoirAmount   = effectiveOpen; // = open brut − amount_paid (déjà réduit par le frontend)
           if (avoirAmount === 0) {
             console.log(`[payt-push ${ts()}] ${inv.invoice_number} — solde restant=0, pas d'avoir nécessaire`);
             continue;

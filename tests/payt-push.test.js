@@ -188,6 +188,21 @@ async function run() {
     assert(cn.book_amount_total === '-600', `Expected -600, got ${cn.book_amount_total}`);
   });
 
+  await test('avoir = open réduit avec paiement partiel (push NE resoustrait PAS amount_paid)', async () => {
+    // CONVENTION push : invoice_open_amount_inc_vat arrive DÉJÀ net du paiement partiel
+    // (frontend applyAmountPaid). Ex : open brut 1000, payé 400 → le front envoie open=600.
+    // L'avoir doit donc valoir -600, PAS -200. Ce test garde contre une double déduction
+    // (footgun si on alignait push sur la convention "brute" de payt-invoices-update.js).
+    const calls = captureFetch([
+      { ok: true, data: {} }, { ok: true, data: {} },
+      { ok: true, data: { errors: {} } }, { ok: true, data: { errors: {} } },
+      { ok: true, data: { errors: {} } },
+    ]);
+    await handler(mockReq({ body: { token: 'tok', invoices: [makeInvoice({ payt_status: 'Clôturée', invoice_open_amount_inc_vat: '600', amount_paid: '400' })] } }), mockRes());
+    const cn = calls[3].body.invoices[0];
+    assert(cn.book_amount_total === '-600', `avoir doit = open réduit (-600), pas une double déduction (-200); got ${cn.book_amount_total}`);
+  });
+
   await test('Payée ne crée pas d\'avoir', async () => {
     const calls = captureFetch([
       { ok: true, data: {} }, { ok: true, data: {} },
