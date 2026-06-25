@@ -17,11 +17,12 @@ export default async function handler(req, res) {
   try {
     const sql = neon(process.env.DATABASE_URL);
 
-    // Count pushes in the last 24h from the datasets table
+    // Count distinct users active in the last 24h from the invoices table,
+    // which keys users by session_id (there is no separate per-user table).
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const [{ active_users }] = await sql`
-      SELECT COUNT(DISTINCT user_id) AS active_users
-      FROM datasets
+      SELECT COUNT(DISTINCT session_id) AS active_users
+      FROM invoices
       WHERE updated_at >= ${since}
     `;
 
