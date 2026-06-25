@@ -41,22 +41,3 @@ export async function sendAlert({ subject, text, level = 'critical', source = ''
     console.error('[alert] Impossible d\'envoyer l\'alerte:', e.message);
   }
 }
-
-// Sends a daily summary email
-export async function sendDailySummary({ stats }) {
-  const lines = [
-    `Résumé quotidien — ${new Date().toLocaleDateString('fr-FR')}`,
-    '',
-    `Pushs réussis    : ${stats.pushSuccess}`,
-    `Pushs échoués    : ${stats.pushError}`,
-    `Avoirs créés     : ${stats.avoirCreated}`,
-    `Avoirs échoués   : ${stats.avoirError}`,
-    `Utilisateurs actifs : ${stats.activeUsers}`,
-  ];
-  await sendAlert({
-    subject: 'Résumé quotidien',
-    text: lines.join('\n'),
-    level: 'info',
-    source: 'cron-daily',
-  });
-}
