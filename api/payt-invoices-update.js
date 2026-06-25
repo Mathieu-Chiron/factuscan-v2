@@ -106,6 +106,10 @@ export default async function handler(req, res) {
           u.new_status === 'Clôturée' && !results[u.invoice_number].errors.length
         );
         for (const u of clotureeeBatch) {
+          // ── CONVENTION (opposée à payt-push.js — ne pas harmoniser à l'aveugle) ──
+          // Ici, open_amount arrive BRUT (l'open courant côté PAYT, avant ce paiement) ; on
+          // soustrait amount_paid côté serveur pour obtenir le reste à créditer. À l'inverse,
+          // payt-push.js reçoit un open DÉJÀ réduit par le frontend et ne soustrait pas.
           const openAmount  = parseFloat(u.open_amount)  || 0;
           const amountPaid  = parseFloat(u.amount_paid)  || 0;
           // Credit note covers only the unpaid remainder (open - partial payment received)
