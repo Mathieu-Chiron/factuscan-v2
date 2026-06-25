@@ -1408,7 +1408,8 @@ Règles :
 
 JSON uniquement.`;
 
-    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:1000,messages:[{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:prompt}]}]})});
+    const authToken=await getAuthToken();
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json',...(authToken&&{Authorization:`Bearer ${authToken}`})},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:1000,messages:[{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:prompt}]}]})});
     if(!r.ok){const e=await r.json();throw new Error(e.error?.message||r.statusText);}
     const res=await r.json();
     const txt=res.content.map(c=>c.text||'').join('');

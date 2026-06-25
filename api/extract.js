@@ -1,9 +1,15 @@
 import { sendAlert } from './_alert.js';
+import { getClerkUserId } from './_clerk-verify.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  // Require a valid Clerk session — this endpoint proxies a paid API (Anthropic)
+  // with a server-side key, so it must never be an open proxy.
+  const userId = await getClerkUserId(req);
+  if (!userId) return res.status(401).json({ error: 'unauthorized' });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
