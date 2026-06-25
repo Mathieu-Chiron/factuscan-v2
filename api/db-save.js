@@ -38,42 +38,46 @@ export default async function handler(req, res) {
   try {
     await sql(INIT_SQL);
 
-    for (const inv of invoices) {
-      await sql`
-        INSERT INTO invoices
-          (session_id, file_name, pdf_url, status, data, debtor_type, target_company, payt_status, amount_paid, push_status)
-        VALUES (
-          ${session_id},
-          ${inv.fileName},
-          ${inv.pdfUrl || null},
-          ${inv.status || null},
-          ${JSON.stringify(inv.data || {})},
-          ${inv.debtorType || null},
-          ${inv.targetCompany ? JSON.stringify(inv.targetCompany) : null},
-          ${inv.paytStatus || null},
-          ${inv.amountPaid ?? null},
-          ${inv.pushStatus || null}
-        )
-        ON CONFLICT (session_id, file_name) DO UPDATE SET
-          pdf_url        = EXCLUDED.pdf_url,
-          status         = EXCLUDED.status,
-          data           = EXCLUDED.data,
-          debtor_type    = EXCLUDED.debtor_type,
-          target_company = EXCLUDED.target_company,
-          payt_status    = EXCLUDED.payt_status,
-          amount_paid    = EXCLUDED.amount_paid,
-          push_status    = EXCLUDED.push_status,
-          updated_at     = NOW()
-      `;
-    }
+    // Build every upsert as a query (not awaited) so the whole snapshot save —
+    // all upserts + the prune below — commits atomically in one transaction.
+    // A mid-batch failure can no longer leave invoices half-written.
+    const queries = invoices.map(inv => sql`
+      INSERT INTO invoices
+        (session_id, file_name, pdf_url, status, data, debtor_type, target_company, payt_status, amount_paid, push_status)
+      VALUES (
+        ${session_id},
+        ${inv.fileName},
+        ${inv.pdfUrl || null},
+        ${inv.status || null},
+        ${JSON.stringify(inv.data || {})},
+        ${inv.debtorType || null},
+        ${inv.targetCompany ? JSON.stringify(inv.targetCompany) : null},
+        ${inv.paytStatus || null},
+        ${inv.amountPaid ?? null},
+        ${inv.pushStatus || null}
+      )
+      ON CONFLICT (session_id, file_name) DO UPDATE SET
+        pdf_url        = EXCLUDED.pdf_url,
+        status         = EXCLUDED.status,
+        data           = EXCLUDED.data,
+        debtor_type    = EXCLUDED.debtor_type,
+        target_company = EXCLUDED.target_company,
+        payt_status    = EXCLUDED.payt_status,
+        amount_paid    = EXCLUDED.amount_paid,
+        push_status    = EXCLUDED.push_status,
+        updated_at     = NOW()
+    `);
 
-    // Delete rows that were removed in the UI (keep only what is in current snapshot)
+    // Prune rows removed in the UI (keep only the current snapshot).
+    // An empty snapshot clears everything — this is the logout purge.
     const fileNames = invoices.map(inv => inv.fileName);
-    if (fileNames.length > 0) {
-      await sql`DELETE FROM invoices WHERE session_id = ${session_id} AND file_name != ALL(${fileNames})`;
-    } else {
-      await sql`DELETE FROM invoices WHERE session_id = ${session_id}`;
-    }
+    queries.push(
+      fileNames.length > 0
+        ? sql`DELETE FROM invoices WHERE session_id = ${session_id} AND file_name != ALL(${fileNames})`
+        : sql`DELETE FROM invoices WHERE session_id = ${session_id}`
+    );
+
+    await sql.transaction(queries);
 
     return res.status(200).json({ ok: true });
   } catch (e) {
