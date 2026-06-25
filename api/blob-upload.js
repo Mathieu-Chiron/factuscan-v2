@@ -25,6 +25,9 @@ export default async function handler(req, res) {
     const blob = await put(filename, buffer, {
       access: 'public',
       contentType: 'application/pdf',
+      // Append a random suffix so the public URL cannot be guessed from the
+      // original filename (e.g. "facture.pdf"). Blobs stay public but unlisted.
+      addRandomSuffix: true,
     });
 
     console.log(`[blob-upload] success: ${blob.url}`);
