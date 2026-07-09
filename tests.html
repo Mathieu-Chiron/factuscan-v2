@@ -1123,11 +1123,12 @@ const EU_VAT_PATTERNS_T = {
 };
 function isValidVAT_T(str){if(!str||typeof str!=='string')return false;const s=str.replace(/[\s.\-]/g,'').toUpperCase();return Object.values(EU_VAT_PATTERNS_T).some(p=>p.test(s));}
 function normalizeVAT_T(raw){if(!raw)return null;const s=String(raw).replace(/[\s.\-]/g,'').toUpperCase();return isValidVAT_T(s)?s:null;}
-function resolveVATAssignment_T(cV,dV){const c=cV?normalizeVAT_T(cV):null;const d=dV?normalizeVAT_T(dV):null;if(c&&d)return 'both';if(c)return 'creditor_only';if(d)return 'debtor_only';return 'none';}
 const DEBTOR_CODE_SOURCES_T=['debtor_lastname','debtor_post_city','debtor_post_street_1','debtor_post_postalcode'];
 function extractCode_T(str,n=3){if(!str)return 'X'.repeat(n);const s=String(str).toUpperCase().replace(/[^A-Z0-9]/g,'');return(s.slice(0,n)||'').padEnd(n,'X');}
 function generateDebtorCode_T(data){return DEBTOR_CODE_SOURCES_T.map(k=>extractCode_T(data[k],3)).join('');}
-function computeDebtorCode_T(data){const vs=resolveVATAssignment_T(data.creditor_vat_number,data.debtor_vat_number);if(vs==='both'||vs==='debtor_only')return normalizeVAT_T(data.debtor_vat_number);return generateDebtorCode_T(data);}
+// Code débiteur = N° TVA débiteur si présent et valide, sinon un code généré (nom + adresse).
+// La TVA créancier a été supprimée : elle n'entre plus dans le calcul.
+function computeDebtorCode_T(data){return normalizeVAT_T(data.debtor_vat_number)||generateDebtorCode_T(data);}
 function computeDebtorCompanyName_T(data){const parts=[data.debtor_firstname,data.debtor_infix,data.debtor_lastname].filter(v=>v&&String(v).trim());return parts.join(' ');}
 
 html.push('<h2>extractCode — génération du code débiteur</h2>');
@@ -1168,11 +1169,11 @@ html.push(runSuite('computeDebtorCode — stratégie VAT vs nom+adresse', [
     input: { debtor_vat_number: 'FR12345678901', debtor_lastname: 'DUPONT', debtor_post_city: 'PARIS', debtor_post_street_1: '12R', debtor_post_postalcode: '75001' },
     expected: 'FR12345678901',
     fn: data => computeDebtorCode_T(data) },
-  { desc: 'Les deux TVAs présentes → TVA débiteur prioritaire',
+  { desc: 'TVA débiteur présente (clé créancier résiduelle ignorée)',
     input: { creditor_vat_number: 'BE0123456789', debtor_vat_number: 'FR12345678901', debtor_lastname: 'DUPONT', debtor_post_city: 'PARIS', debtor_post_street_1: '12R', debtor_post_postalcode: '75001' },
     expected: 'FR12345678901',
     fn: data => computeDebtorCode_T(data) },
-  { desc: 'Seule TVA créancier → code généré (la TVA créancier n\'est PAS utilisée)',
+  { desc: 'Pas de TVA débiteur (clé créancier résiduelle ignorée) → code généré',
     input: { creditor_vat_number: 'FR12345678901', debtor_lastname: 'DUPONT', debtor_post_city: 'PARIS', debtor_post_street_1: '12 rue', debtor_post_postalcode: '75001' },
     expected: 'DUPPAR12R750',
     fn: data => computeDebtorCode_T(data) },
