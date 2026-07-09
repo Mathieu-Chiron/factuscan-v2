@@ -83,18 +83,8 @@ function checkFields(inv) {
   FIELDS.forEach(f=>{ const v=inv.data[f.key],res=vandn(v,f); if(!res.valid){inv.errors[f.key]=res.errs[0];ok=false;} else if(res.norm!==v&&res.norm!=null) inv.data[f.key]=res.norm; });
   // Normalize invoice_number to "YYYY-NNNNN"
   if(inv.data.invoice_number) inv.data.invoice_number=`${fmtDate(inv.data.invoice_date)}-${fmtInvref(inv.data.invoice_number)}`;
-  // Creditor VAT always required
-  const rawC=inv.data.creditor_vat_number;
-  const nc=normalizeVAT(rawC);
-  if(!nc){
-    const empty=rawC==null||String(rawC).trim()===''||String(rawC).toLowerCase()==='null';
-    const hintC=getVATHint(rawC);
-    inv.errors.creditor_vat_number=empty
-      ?'N° TVA créancier requis — ex : FR12345678901'
-      :hintC?`Format invalide — ${hintC.desc} (ex : ${hintC.example})`:'Format invalide — attendu : code pays + numéro (ex : FR12345678901, DE123456789)';
-    ok=false;
-  } else inv.data.creditor_vat_number=nc;
-  // B2C: field is greyed out — skip debtor_vat validation (value preserved, masked in CSV export)
+  // TVA débiteur : facultative. Si présente (et non B2C), on valide seulement le format ;
+  // absente ou effacée → code débiteur généré (nom + adresse), y compris pour une entreprise.
   if(inv.debtorType!=='particulier'){
     const rawD=inv.data.debtor_vat_number;
     const hasDebtorValue=rawD!=null&&String(rawD).trim()!==''&&String(rawD).toLowerCase()!=='null';
@@ -103,8 +93,6 @@ function checkFields(inv) {
       if(!nd){const h=getVATHint(rawD);inv.errors.debtor_vat_number=h?`Format invalide — ${h.desc} (ex : ${h.example})`:'Format invalide — attendu : code pays + numéro (ex : FR12345678901, DE123456789)';ok=false;}
       else inv.data.debtor_vat_number=nd;
     }
-    const state=getDebtorCodeState(inv.data,inv.debtorType||null);
-    if(state.vatRequired){inv.errors.debtor_vat_number='N° TVA débiteur requis pour une entreprise — ex : FR12345678901';ok=false;}
   }
   return ok;
 }
@@ -230,28 +218,6 @@ function getVATHint(raw){
   return null;
 }
 
-function resolveVATAssignment(creditorVAT,debtorVAT){
-  const c=creditorVAT?normalizeVAT(creditorVAT):null;
-  const d=debtorVAT?normalizeVAT(debtorVAT):null;
-  if(c&&d) return 'both';
-  if(c) return 'creditor_only';
-  if(d) return 'debtor_only';
-  return 'none';
-}
-
-function switchVATValues(data){
-  const tmp=data.creditor_vat_number;
-  data.creditor_vat_number=data.debtor_vat_number;
-  data.debtor_vat_number=tmp;
-  return data;
-}
-
-function hasDuplicateVAT(creditorVAT,debtorVAT){
-  if(!creditorVAT||!debtorVAT) return false;
-  const c=normalizeVAT(creditorVAT),d=normalizeVAT(debtorVAT);
-  return !!(c&&d&&c===d);
-}
-
 function computeDebtorCompanyName(data){
   const parts=[data.debtor_firstname,data.debtor_infix,data.debtor_lastname].filter(v=>v&&String(v).trim());
   return parts.join(' ');
@@ -275,36 +241,17 @@ function generateDebtorCode(data){
   return DEBTOR_CODE_SOURCES.map(k=>extractCode(data[k],3)).join('');
 }
 
+// Code débiteur = N° TVA débiteur si présent et valide, sinon un code généré (nom + adresse).
+// Vaut aussi pour les entreprises : pas de TVA détectée (ou effacée) → code généré, comme un particulier.
 function computeDebtorCode(data){
-  const vatState=resolveVATAssignment(data.creditor_vat_number,data.debtor_vat_number);
-  if(vatState==='both'||vatState==='debtor_only') return normalizeVAT(data.debtor_vat_number);
-  return generateDebtorCode(data);
-}
-
-function shouldShowDebtorTypeSelector(vatState){
-  return vatState==='creditor_only'||vatState==='none';
+  return normalizeVAT(data.debtor_vat_number)||generateDebtorCode(data);
 }
 
 function getDebtorCodeState(data,debtorType){
-  // B2C: debtorType takes priority — always generate code, ignore stored debtor_vat
-  if(debtorType==='particulier'){
-    return{code:generateDebtorCode(data),locked:true,requireType:false,vatRequired:false,showDebtorVatField:false};
-  }
-  const vatState=resolveVATAssignment(data.creditor_vat_number,data.debtor_vat_number);
-  // B2B confirmé : 2 TVA ou TVA débiteur connue
-  if(vatState==='both'||vatState==='debtor_only'){
-    return{code:normalizeVAT(data.debtor_vat_number),locked:true,requireType:false,vatRequired:false,showDebtorVatField:false};
-  }
-  const code=computeDebtorCode(data);
-  // Type non encore défini
-  if(!debtorType){
-    return{code,locked:true,requireType:true,vatRequired:false,showDebtorVatField:true};
-  }
-  // entreprise
-  if(debtorType==='entreprise'){
-    return{code,locked:true,requireType:false,vatRequired:true,showDebtorVatField:true};
-  }
-  return{code,locked:true,requireType:false,vatRequired:false,showDebtorVatField:false};
+  // Particulier (B2C) : toujours un code généré, TVA débiteur ignorée.
+  if(debtorType==='particulier') return{code:generateDebtorCode(data)};
+  // Entreprise ou type non défini : TVA débiteur si présente, sinon code généré.
+  return{code:computeDebtorCode(data)};
 }
 
 /* ══ TEST ENGINE ══ */
@@ -489,36 +436,6 @@ suite('normalizeVAT', ()=>{
   test('Null → null',                 normalizeVAT(null),                 null);
 });
 
-suite('resolveVATAssignment', ()=>{
-  test('Deux valides → both',         resolveVATAssignment('FR12345678901','DE123456789'),   'both');
-  test('Créancier seul',              resolveVATAssignment('FR12345678901',null),            'creditor_only');
-  test('Débiteur seul',               resolveVATAssignment(null,'DE123456789'),              'debtor_only');
-  test('Aucun → none',                resolveVATAssignment(null,null),                       'none');
-  test('Deux invalides → none',       resolveVATAssignment('invalide','invalide'),           'none');
-  test('Créancier invalide',          resolveVATAssignment('invalide','DE123456789'),        'debtor_only');
-  test('Avec espaces',                resolveVATAssignment('FR 12 345678901','DE123456789'), 'both');
-  test('Vides → none',                resolveVATAssignment('',''),                           'none');
-});
-
-suite('switchVATValues', ()=>{
-  const d1={creditor_vat_number:'FR12345678901',debtor_vat_number:'DE123456789'};switchVATValues(d1);
-  test('Créancier → débiteur',        d1.creditor_vat_number, 'DE123456789');
-  test('Débiteur → créancier',        d1.debtor_vat_number,   'FR12345678901');
-  const d2={creditor_vat_number:'FR12345678901',debtor_vat_number:null};switchVATValues(d2);
-  test('Échange avec null',           d2.creditor_vat_number, null);
-  test('Null devient créancier',      d2.debtor_vat_number,   'FR12345678901');
-  test('Retourne l\'objet',           switchVATValues({creditor_vat_number:'A',debtor_vat_number:'B'}).creditor_vat_number, 'B');
-});
-
-suite('Risque: même TVA pour créancier et débiteur (confusion Claude)', ()=>{
-  test('Deux valeurs identiques → détecté',    hasDuplicateVAT('FR12345678901','FR12345678901'), true);
-  test('Valeurs différentes → non détecté',    hasDuplicateVAT('FR12345678901','DE123456789'),  false);
-  test('Un null → non détecté',                hasDuplicateVAT('FR12345678901',null),           false);
-  test('Deux null → non détecté',              hasDuplicateVAT(null,null),                      false);
-  test('Identiques avec espaces → détecté',    hasDuplicateVAT('FR 12 345678901','FR12345678901'), true);
-  test('Identiques casse mixte → détecté',     hasDuplicateVAT('fr12345678901','FR12345678901'),   true);
-});
-
 suite('Risque: entrée non-string dans normalizeVAT', ()=>{
   test('Nombre entier → null',      normalizeVAT(123456789),  null);
   test('Nombre décimal → null',     normalizeVAT(12.34),      null);
@@ -550,35 +467,9 @@ suite('Risque: format AT sans préfixe U (piège fréquent)', ()=>{
   test('AT trop long → invalide',  isValidVAT('ATU123456789'),false);
 });
 
-suite('Risque: double switch (idempotence)', ()=>{
-  const d={creditor_vat_number:'FR12345678901',debtor_vat_number:'DE123456789'};
-  switchVATValues(d);switchVATValues(d);
-  test('Switch×2 = valeur initiale créancier', d.creditor_vat_number, 'FR12345678901');
-  test('Switch×2 = valeur initiale débiteur',  d.debtor_vat_number,   'DE123456789');
-});
-
-suite('Risque: switch quand un côté est null', ()=>{
-  const d={creditor_vat_number:'FR12345678901',debtor_vat_number:null};
-  switchVATValues(d);
-  test('Créancier devient null',       d.creditor_vat_number, null);
-  test('Null migre vers débiteur',     d.debtor_vat_number,   'FR12345678901');
-  test('État = debtor_only après switch', resolveVATAssignment(d.creditor_vat_number,d.debtor_vat_number), 'debtor_only');
-});
-
-suite('Risque: champ vidé manuellement par l\'utilisateur', ()=>{
-  test('Valeur vide → resolveVAT none',  resolveVATAssignment('',''),             'none');
-  test('Un vide + un valide → one side', resolveVATAssignment('','DE123456789'),  'debtor_only');
+suite('Risque: champ TVA vidé manuellement → normalizeVAT null', ()=>{
   test('normalizeVAT vide → null',       normalizeVAT(''),                        null);
-});
-
-suite('Risque: re-extraction change le nombre de TVA (champ résiduel)', ()=>{
-  // Simule: après re-extraction, seul creditor_vat revient, debtor_vat doit être null
-  const inv={data:{creditor_vat_number:'FR12345678901',debtor_vat_number:'DE123456789'}};
-  // Nouvelle extraction retourne seulement creditor
-  const newVAT={creditor_vat_number:'FR12345678901',debtor_vat_number:null};
-  Object.assign(inv.data,newVAT);
-  test('Débiteur effacé après re-extraction',   inv.data.debtor_vat_number,   null);
-  test('État correct après re-extraction',      resolveVATAssignment(inv.data.creditor_vat_number,inv.data.debtor_vat_number), 'creditor_only');
+  test('normalizeVAT null → null',       normalizeVAT(null),                      null);
 });
 
 suite('Risque: colonnes TVA dans l\'export CSV (getActiveVATFields)', ()=>{
@@ -664,194 +555,110 @@ const withCreditorVAT={...baseData,creditor_vat_number:'FR12345678901',debtor_va
 const withNoVAT={...baseData,creditor_vat_number:null,debtor_vat_number:null};
 const GENERATED='ACMPAR12R750';
 
-suite('shouldShowDebtorTypeSelector', ()=>{
-  test('both → false',         shouldShowDebtorTypeSelector('both'),          false);
-  test('debtor_only → false',  shouldShowDebtorTypeSelector('debtor_only'),   false);
-  test('creditor_only → true', shouldShowDebtorTypeSelector('creditor_only'), true);
-  test('none → true',          shouldShowDebtorTypeSelector('none'),          true);
+suite('getDebtorCodeState — TVA débiteur présente → code = TVA', ()=>{
+  test('type non défini → code = TVA débiteur',   getDebtorCodeState(withDebtorVAT,null).code,        'DE123456789');
+  test('entreprise → code = TVA débiteur',        getDebtorCodeState(withDebtorVAT,'entreprise').code, 'DE123456789');
+  // 2 TVA stockées : seule la TVA débiteur compte
+  test('2 TVA stockées → code = TVA débiteur',    getDebtorCodeState(withBothVAT,'entreprise').code,   'DE123456789');
 });
 
-suite('getDebtorCodeState — 2 TVA (B2B confirmé)', ()=>{
-  const s=getDebtorCodeState(withBothVAT,null);
-  test('code = TVA débiteur',  s.code,         'DE123456789');
-  test('locked',               s.locked,       true);
-  test('pas requireType',      s.requireType,  false);
-  test('pas vatRequired',      s.vatRequired,  false);
-  test('pas showDebtorVat',    s.showDebtorVatField, false);
+suite('getDebtorCodeState — pas de TVA débiteur → code généré', ()=>{
+  test('type non défini → code généré',   getDebtorCodeState(withNoVAT,null).code,          GENERATED);
+  test('entreprise → code généré',        getDebtorCodeState(withNoVAT,'entreprise').code,  GENERATED);
+  test('particulier → code généré',       getDebtorCodeState(withNoVAT,'particulier').code, GENERATED);
+  // Une TVA créancier résiduelle ne change rien : elle est ignorée
+  test('créancier seul → code généré',    getDebtorCodeState(withCreditorVAT,'entreprise').code, GENERATED);
 });
 
-suite('getDebtorCodeState — TVA débiteur seul', ()=>{
-  const s=getDebtorCodeState(withDebtorVAT,null);
-  test('code = TVA débiteur',  s.code,         'DE123456789');
-  test('pas requireType',      s.requireType,  false);
-  test('pas vatRequired',      s.vatRequired,  false);
-  test('pas showDebtorVat',    s.showDebtorVatField, false);
+suite('Entreprise sans TVA débiteur → code généré + validation OK', ()=>{
+  // Nouvelle règle : une entreprise sans TVA débiteur n'est plus bloquée.
+  const data={...baseData,debtor_vat_number:null};
+  test('code = code généré (comme un particulier)', getDebtorCodeState(data,'entreprise').code, generateDebtorCode(data));
+  const base={debtor_lastname:'ACME SAS',debtor_post_street_1:'12 rue de la Paix',debtor_post_postalcode:'75001',debtor_post_city:'Paris',debtor_post_country_code:'FR',invoice_number:'F-001',invoice_date:'2024-03-15',invoice_due_date:'2024-04-15',invoice_total_amount_inc_vat:'1500',invoice_open_amount_inc_vat:'250'};
+  const inv={data:{...base,debtor_vat_number:null},errors:{},debtorType:'entreprise'};
+  test('checkFields passe (entreprise sans TVA débiteur)', checkFields(inv), true);
+  test('Aucune erreur debtor_vat_number',                 inv.errors.debtor_vat_number, undefined);
 });
 
-suite('getDebtorCodeState — TVA créancier seul, type non défini', ()=>{
-  const s=getDebtorCodeState(withCreditorVAT,null);
-  test('code généré',          s.code,         GENERATED);
-  test('requireType',          s.requireType,  true);
-  test('pas vatRequired',      s.vatRequired,  false);
-  test('showDebtorVat',        s.showDebtorVatField, true);
+suite('Entreprise: utilisateur efface la TVA débiteur → bascule sur code généré', ()=>{
+  const data={...baseData,debtor_vat_number:'DE123456789'};
+  test('Avant : code = TVA débiteur',   getDebtorCodeState(data,'entreprise').code, 'DE123456789');
+  // L'utilisateur efface la TVA débiteur
+  data.debtor_vat_number=null;
+  test('Après effacement : code = généré', getDebtorCodeState(data,'entreprise').code, generateDebtorCode(data));
 });
 
-suite('getDebtorCodeState — TVA créancier seul + entreprise', ()=>{
-  const s=getDebtorCodeState(withCreditorVAT,'entreprise');
-  test('code généré',          s.code,         GENERATED);
-  test('pas requireType',      s.requireType,  false);
-  test('vatRequired',          s.vatRequired,  true);
-  test('showDebtorVat',        s.showDebtorVatField, true);
-  // Dès que l\'utilisateur saisit la TVA débiteur → code bascule
-  const withNewVAT={...withCreditorVAT,debtor_vat_number:'IT12345678901'};
-  test('TVA saisie → code = TVA débiteur', getDebtorCodeState(withNewVAT,'entreprise').code, 'IT12345678901');
-  test('TVA saisie → vatRequired disparaît', getDebtorCodeState(withNewVAT,'entreprise').vatRequired, false);
+suite('Entreprise avec TVA débiteur → code = TVA', ()=>{
+  const data={...baseData,debtor_vat_number:'IT12345678901'};
+  test('code = TVA débiteur',            getDebtorCodeState(data,'entreprise').code, 'IT12345678901');
+  test('computeDebtorCode = TVA débiteur', computeDebtorCode(data),                  'IT12345678901');
 });
 
-suite('getDebtorCodeState — TVA créancier seul + particulier', ()=>{
-  const s=getDebtorCodeState(withCreditorVAT,'particulier');
-  test('code généré',          s.code,         GENERATED);
-  test('pas requireType',      s.requireType,  false);
-  test('pas vatRequired',      s.vatRequired,  false);
-  test('pas showDebtorVat',    s.showDebtorVatField, false);
-});
-
-suite('getDebtorCodeState — aucune TVA, type non défini', ()=>{
-  const s=getDebtorCodeState(withNoVAT,null);
-  test('code généré',          s.code,         GENERATED);
-  test('requireType',          s.requireType,  true);
-  test('pas vatRequired',      s.vatRequired,  false);
-  test('showDebtorVat',        s.showDebtorVatField, true);
-});
-
-suite('getDebtorCodeState — aucune TVA + entreprise', ()=>{
-  const s=getDebtorCodeState(withNoVAT,'entreprise');
-  test('code généré',          s.code,         GENERATED);
-  test('pas requireType',      s.requireType,  false);
-  test('vatRequired',          s.vatRequired,  true);
-  test('showDebtorVat',        s.showDebtorVatField, true);
-  // Mise à jour dynamique du code quand nom change
-  const renamed={...withNoVAT,debtor_lastname:'DUPONT SA'};
-  test('Code se met à jour si nom change', getDebtorCodeState(renamed,'entreprise').code.slice(0,3), 'DUP');
-});
-
-suite('getDebtorCodeState — aucune TVA + particulier', ()=>{
-  const s=getDebtorCodeState(withNoVAT,'particulier');
-  test('code généré',          s.code,         GENERATED);
-  test('pas vatRequired',      s.vatRequired,  false);
-  test('pas showDebtorVat',    s.showDebtorVatField, false);
-});
-
-suite('Validation: blocage si entreprise sans TVA débiteur', ()=>{
-  test('Créancier+entreprise sans TVA → bloqué',  getDebtorCodeState(withCreditorVAT,'entreprise').vatRequired, true);
-  test('Créancier+entreprise avec TVA → libre',   getDebtorCodeState({...withCreditorVAT,debtor_vat_number:'IT12345678901'},'entreprise').vatRequired, false);
-  test('Aucune+entreprise → bloqué',              getDebtorCodeState(withNoVAT,'entreprise').vatRequired, true);
-  test('Aucune+particulier → libre',              getDebtorCodeState(withNoVAT,'particulier').vatRequired, false);
-  test('2 TVA → toujours libre',                  getDebtorCodeState(withBothVAT,'entreprise').vatRequired, false);
-});
-
-suite('checkFields: TVA créancier toujours obligatoire', ()=>{
-  const base={debtor_lastname:'ACME SAS',debtor_post_street_1:'12 rue de la Paix',debtor_post_postalcode:'75001',debtor_post_city:'Paris',debtor_post_country_code:'FR',invoice_number:'F-001',invoice_date:'2024-03-15',invoice_due_date:'2024-04-15',amount_ttc:'1500',invoice_total_amount_inc_vat:'1500',invoice_open_amount_inc_vat:'250'};
-  // Sans TVA créancier → bloqué
-  const i1={data:{...base,creditor_vat_number:null,debtor_vat_number:null},errors:{},debtorType:null};
-  checkFields(i1);
-  test('Sans TVA créancier → erreur',     !!i1.errors.creditor_vat_number, true);
-  test('Sans TVA créancier → bloqué',     checkFields({data:{...base,creditor_vat_number:null,debtor_vat_number:null},errors:{},debtorType:null}), false);
-  // Avec TVA créancier valide → OK
-  const i2={data:{...base,creditor_vat_number:'FR12345678901',debtor_vat_number:null},errors:{},debtorType:'particulier'};
-  test('Avec TVA créancier valide → pas d\'erreur créancier', (()=>{checkFields(i2);return !i2.errors.creditor_vat_number;})(), true);
-  // TVA créancier normalisée
-  const i3={data:{...base,creditor_vat_number:'fr 123 456 789 01',debtor_vat_number:null},errors:{},debtorType:'particulier'};
+suite('checkFields: TVA débiteur absente n\'est jamais requise (entreprise)', ()=>{
+  const base={debtor_lastname:'ACME SAS',debtor_post_street_1:'12 rue de la Paix',debtor_post_postalcode:'75001',debtor_post_city:'Paris',debtor_post_country_code:'FR',invoice_number:'F-001',invoice_date:'2024-03-15',invoice_due_date:'2024-04-15',invoice_total_amount_inc_vat:'1500',invoice_open_amount_inc_vat:'250'};
+  // Entreprise sans TVA débiteur → OK, pas d'erreur
+  const i1={data:{...base,debtor_vat_number:null},errors:{},debtorType:'entreprise'};
+  test('Sans TVA débiteur → pas d\'erreur',  (()=>{checkFields(i1);return i1.errors.debtor_vat_number;})(), undefined);
+  test('Sans TVA débiteur → checkFields passe', checkFields({data:{...base,debtor_vat_number:null},errors:{},debtorType:'entreprise'}), true);
+  // TVA débiteur présente et valide → normalisée, pas d'erreur
+  const i2={data:{...base,debtor_vat_number:'de 123 456 789'},errors:{},debtorType:'entreprise'};
+  checkFields(i2);
+  test('TVA débiteur présente → normalisée',  i2.data.debtor_vat_number, 'DE123456789');
+  test('TVA débiteur présente valide → pas d\'erreur', i2.errors.debtor_vat_number, undefined);
+  // TVA débiteur présente mais mauvais format → erreur de FORMAT uniquement
+  const i3={data:{...base,debtor_vat_number:'NOTAVAT'},errors:{},debtorType:'entreprise'};
   checkFields(i3);
-  test('TVA créancier normalisée',        i3.data.creditor_vat_number, 'FR12345678901');
-  // Erreur même si TVA débiteur présente mais créancier absente
-  const i4={data:{...base,creditor_vat_number:'',debtor_vat_number:'DE123456789'},errors:{},debtorType:null};
-  checkFields(i4);
-  test('TVA créancier vide + débiteur présent → erreur créancier', !!i4.errors.creditor_vat_number, true);
+  test('TVA débiteur mauvais format → erreur format', i3.errors.debtor_vat_number.includes('invalide'), true);
+  test('Erreur format ne dit pas "requis"',           i3.errors.debtor_vat_number.includes('requis'), false);
 });
 
 /* ══ RISK: TVA créancier toujours obligatoire ════════════ */
 
 const baseOK={debtor_lastname:'ACME SAS',debtor_post_street_1:'12 rue de la Paix',debtor_post_postalcode:'75001',debtor_post_city:'Paris',debtor_post_country_code:'FR',invoice_number:'F-001',invoice_date:'2024-03-15',invoice_due_date:'2024-04-15',amount_ttc:'1500',invoice_total_amount_inc_vat:'1500',invoice_open_amount_inc_vat:'250'};
 
-suite('Risque: switch laisse créancier null → hint UI disponible', ()=>{
-  // Avant switch: créancier valide, débiteur null
-  const d={creditor_vat_number:'FR12345678901',debtor_vat_number:null};
-  switchVATValues(d);
-  // Après switch: créancier=null, débiteur=FR12345678901 → vatState=debtor_only
-  test('Après switch : vatState = debtor_only',          resolveVATAssignment(d.creditor_vat_number,d.debtor_vat_number), 'debtor_only');
-  // checkFields bloque (créancier toujours requis)
-  const inv={data:{...baseOK,...d},errors:{},debtorType:null};
+suite('Nouveau: facture sans TVA du tout (auto-entrepreneur) → validation OK', ()=>{
+  // Aucune TVA n'est requise : la facture passe, le code débiteur est généré.
+  const inv={data:{...baseOK,debtor_vat_number:null},errors:{},debtorType:'particulier'};
   const ok=checkFields(inv);
-  test('Après switch créancier→null : bloqué',           ok, false);
-  test('Après switch créancier→null : erreur créancier', !!inv.errors.creditor_vat_number, true);
-  // Le hint doit être affiché (creditor null, debtor valide) — condition UI vérifiée
-  const shouldShowHint=(!d.creditor_vat_number && !!d.debtor_vat_number);
-  test('Condition hint active quand créancier null + débiteur valide', shouldShowHint, true);
-  // Un re-switch corrige la situation
-  switchVATValues(d);
-  test('Re-switch corrige : créancier restauré',         d.creditor_vat_number, 'FR12345678901');
-  test('Re-switch corrige : débiteur redevient null',    d.debtor_vat_number,   null);
-  const inv2={data:{...baseOK,...d},errors:{},debtorType:'particulier'};
-  test('Après re-switch : checkFields passe',            checkFields(inv2), true);
+  test('Facture sans TVA → passe',                       ok,  true);
+  test('Facture sans TVA → aucune erreur débiteur',      inv.errors.debtor_vat_number, undefined);
+  const entreprise={data:{...baseOK,debtor_vat_number:null},errors:{},debtorType:'entreprise'};
+  test('Facture sans TVA + entreprise → passe',          checkFields(entreprise), true);
+  test('Code débiteur = code généré',                    getDebtorCodeState(entreprise.data,'entreprise').code, generateDebtorCode(entreprise.data));
 });
 
-suite('Risque: facture sans TVA du tout (auto-entrepreneur) → blocage', ()=>{
-  const inv={data:{...baseOK,creditor_vat_number:null,debtor_vat_number:null},errors:{},debtorType:'particulier'};
-  const ok=checkFields(inv);
-  test('Facture sans TVA → bloquée',                    ok,  false);
-  test('Facture sans TVA → message d\'erreur créancier', typeof inv.errors.creditor_vat_number, 'string');
-  // Pas d'erreur sur le débiteur (il n'est pas requis ici)
-  test('Facture sans TVA + particulier → pas d\'erreur débiteur', inv.errors.debtor_vat_number, undefined);
-});
-
-suite('Risque: re-extraction efface la TVA créancier saisie manuellement', ()=>{
-  // Utilisateur a saisi manuellement FR12345678901
-  const inv={data:{...baseOK,creditor_vat_number:'FR12345678901',debtor_vat_number:null},errors:{},debtorType:null};
+suite('Nouveau: TVA débiteur invalide → erreur de format (créancier ignoré)', ()=>{
+  // Seule la TVA débiteur est validée (format), le créancier n'existe plus.
+  const inv={data:{...baseOK,debtor_vat_number:'DE123456789'},errors:{},debtorType:null};
   checkFields(inv);
-  const okBefore=!inv.errors.creditor_vat_number;
-  // Re-extraction: Claude ne trouve plus de TVA créancier
-  Object.assign(inv.data,{creditor_vat_number:null,debtor_vat_number:null});
-  inv.errors={};
-  const okAfter=checkFields(inv);
-  test('Avant re-extraction : valide',                  okBefore, true);
-  test('Après re-extraction sans TVA : bloqué',         okAfter,  false);
-  test('Après re-extraction : erreur créancier',        !!inv.errors.creditor_vat_number, true);
-});
-
-suite('Risque: vatState calculé sur valeur non-normalisée (créancier invalide)', ()=>{
-  // Créancier invalide (raw) + débiteur valide
-  // On s'assure que le débiteur est quand même évalué
-  const inv={data:{...baseOK,creditor_vat_number:'INVALID',debtor_vat_number:'DE123456789'},errors:{},debtorType:null};
-  checkFields(inv);
-  // Créancier doit être en erreur
-  test('Créancier invalide → erreur créancier',         !!inv.errors.creditor_vat_number, true);
-  // Débiteur valide doit être normalisé (pas d'erreur débiteur)
-  test('Débiteur valide avec créancier invalide → pas d\'erreur débiteur', inv.errors.debtor_vat_number, undefined);
-  test('Débiteur normalisé malgré créancier invalide',  inv.data.debtor_vat_number, 'DE123456789');
+  test('TVA débiteur valide → pas d\'erreur',            inv.errors.debtor_vat_number, undefined);
+  test('TVA débiteur normalisée',                        inv.data.debtor_vat_number, 'DE123456789');
+  const bad={data:{...baseOK,debtor_vat_number:'INVALID'},errors:{},debtorType:null};
+  checkFields(bad);
+  test('TVA débiteur invalide → erreur format',          bad.errors.debtor_vat_number.includes('invalide'), true);
 });
 
 suite('Risque: facture ignorée ne bloque plus le pre-export (fix)', ()=>{
   // Les factures ignorées sont exclues de l'export — elles ne doivent pas bloquer le pre-export
-  const skipped={data:{...baseOK,creditor_vat_number:null,debtor_vat_number:null},errors:{},debtorType:null,status:'skipped'};
+  const skipped={data:{...baseOK,debtor_vat_number:null},errors:{},debtorType:null,status:'skipped'};
   const result=simulatePreExportCheck(skipped,[makeInvoice('validated',fullData)]);
-  test('Facture ignorée sans TVA créancier → ne bloque pas',      result.blocked, false);
+  test('Facture ignorée → ne bloque pas',                         result.blocked, false);
   // Avec d'autres factures ignorées dans la liste → warning skipped (pas missing_fields)
   const result2=simulatePreExportCheck(skipped,[makeInvoice('skipped',{}),makeInvoice('validated',fullData)]);
   test('Facture ignorée courante + liste ignorées → skipped_warning', result2.reason, 'skipped_warning');
 });
 
 suite('Risque: checkFields idempotent (double appel sans corruption)', ()=>{
-  const inv={data:{...baseOK,creditor_vat_number:'FR12345678901',debtor_vat_number:null},errors:{},debtorType:'particulier'};
+  const inv={data:{...baseOK,debtor_vat_number:'DE123456789'},errors:{},debtorType:'entreprise'};
   checkFields(inv);
   const errorsAfter1=JSON.stringify(inv.errors);
-  const ok1=!inv.errors.creditor_vat_number;
+  const ok1=!inv.errors.debtor_vat_number;
   checkFields(inv);
   const errorsAfter2=JSON.stringify(inv.errors);
-  const ok2=!inv.errors.creditor_vat_number;
+  const ok2=!inv.errors.debtor_vat_number;
   test('Double appel : même résultat',     ok1===ok2,         true);
   test('Double appel : mêmes erreurs',     errorsAfter1,      errorsAfter2);
-  test('TVA créancier non altérée',        inv.data.creditor_vat_number, 'FR12345678901');
+  test('TVA débiteur non altérée',         inv.data.debtor_vat_number, 'DE123456789');
 });
 
 /* ══ RESULTS ══ */
@@ -866,7 +673,7 @@ function simulateBuildCSV(invoices){
   const header=EXPORT_COLS_SIM.join(';');
   const rows=validated.map(inv=>EXPORT_COLS_SIM.map(k=>{
     let v='';
-    if(k==='administration_code') v=String(inv.data.creditor_vat_number??'');
+    if(k==='administration_code') v=''; // colonne conservée mais toujours vide (créancier supprimé)
     else if(k==='debtor_company_name') v=computeDebtorCompanyName(inv.data);
     else if(k==='debtor_code') v=String(inv.data[k]||generateDebtorCode(inv.data));
     else if(EMPTY_KEYS_SIM.includes(k)) v='';
@@ -899,26 +706,24 @@ const b2bData={...b2bRaw,debtor_code:computeDebtorCode(b2bRaw)};
 suite('B2B: debtor_code = debtor_vat_number', ()=>{
   const state=getDebtorCodeState(b2bRaw,'entreprise');
   test('B2B debtor_code = TVA débiteur',       state.code,         'DE123456789');
-  test('B2B vatRequired = false (TVA connue)', state.vatRequired,  false);
   test('B2B computeDebtorCode = TVA débiteur', computeDebtorCode(b2bRaw), 'DE123456789');
   test('B2B debtor_code === debtor_vat_number', b2bData.debtor_code===b2bData.debtor_vat_number, true);
 });
 
-suite('B2B: entreprise sans TVA débiteur → bloqué', ()=>{
+suite('B2B: entreprise sans TVA débiteur → code généré (non bloqué)', ()=>{
   const noVat={...b2bRaw,debtor_vat_number:null};
   const state=getDebtorCodeState(noVat,'entreprise');
-  test('Sans TVA débiteur → vatRequired',      state.vatRequired,  true);
-  test('Sans TVA débiteur → code généré (non utilisé)', typeof state.code, 'string');
-  // checkFields bloque
+  test('Sans TVA débiteur → code généré',      state.code,         generateDebtorCode(noVat));
+  // checkFields passe : la TVA débiteur n'est jamais requise
   const inv={data:{...noVat},errors:{},debtorType:'entreprise'};
-  test('checkFields bloque B2B sans TVA',      checkFields(inv),   false);
-  test('Erreur sur debtor_vat_number',         !!inv.errors.debtor_vat_number, true);
+  test('checkFields passe pour B2B sans TVA',  checkFields(inv),   true);
+  test('Aucune erreur debtor_vat_number',      inv.errors.debtor_vat_number, undefined);
 });
 
 // ── B2C logic ─────────────────────────────────────────
 suite('B2C: debtor_vat_number vide, debtor_code généré', ()=>{
   const state=getDebtorCodeState(b2cRaw,'particulier');
-  test('B2C vatRequired = false',              state.vatRequired,  false);
+  test('B2C debtor_code = code généré (état)', state.code,         generateDebtorCode(b2cRaw));
   test('B2C debtor_vat_number = null',         b2cData.debtor_vat_number, null);
   test('B2C debtor_code = code généré',        b2cData.debtor_code, generateDebtorCode(b2cRaw));
   test('B2C debtor_code ≠ debtor_vat_number',  b2cData.debtor_code!==b2cData.debtor_vat_number, true);
@@ -938,7 +743,7 @@ suite('CSV simulation — B2C seul', ()=>{
   const codeIdx=exportFields.findIndex(f=>f.key==='debtor_code');
   test('debtor_code = code généré dans CSV',   row[codeIdx], b2cData.debtor_code);
   const adminIdx=exportFields.findIndex(f=>f.key==='administration_code');
-  test('administration_code = creditor_vat dans CSV', row[adminIdx], 'FR12345678901');
+  test('administration_code toujours vide dans CSV', row[adminIdx], '');
   console.log('\n  [CSV B2C]\n  '+header+'\n  '+rows[0]);
 });
 
@@ -1092,18 +897,19 @@ suite('setDebtorType B2C: grise le champ sans effacer la valeur', ()=>{
   test('B2C : aucune erreur débiteur',                 inv.errors.debtor_vat_number, undefined);
 });
 
-suite('setDebtorType B2B: conserve ou attend debtor_vat_number', ()=>{
-  // Sans TVA débiteur → bloqué
-  const inv={data:{...baseOK,creditor_vat_number:'FR12345678901',debtor_vat_number:null},errors:{},debtorType:null,status:'extracted'};
+suite('setDebtorType B2B: sans TVA débiteur → code généré, validation OK', ()=>{
+  const inv={data:{...baseOK,debtor_vat_number:null},errors:{},debtorType:null,status:'extracted'};
   simulateSetDebtorType(inv,'entreprise');
   test('B2B: debtorType = entreprise',    inv.debtorType, 'entreprise');
   test('B2B: debtor_vat non effacé',      inv.data.debtor_vat_number, null);
   const ok=checkFields(inv);
-  test('B2B sans TVA débiteur : bloqué',  ok, false);
-  test('B2B sans TVA : erreur requis',    inv.errors.debtor_vat_number.includes('requis'), true);
-  // Avec TVA débiteur → passe
+  test('B2B sans TVA débiteur : passe',   ok, true);
+  test('B2B sans TVA : aucune erreur débiteur', inv.errors.debtor_vat_number, undefined);
+  test('B2B sans TVA : code = code généré', getDebtorCodeState(inv.data,'entreprise').code, generateDebtorCode(inv.data));
+  // Avec TVA débiteur → code = TVA
   inv.data.debtor_vat_number='DE123456789';inv.errors={};
   test('B2B avec TVA débiteur : valide',  checkFields(inv), true);
+  test('B2B avec TVA débiteur : code = TVA', getDebtorCodeState(inv.data,'entreprise').code, 'DE123456789');
 });
 
 suite('setDebtorType: basculement B2B→B2C→B2B conserve TVA débiteur', ()=>{
@@ -1121,67 +927,38 @@ suite('setDebtorType: basculement B2B→B2C→B2B conserve TVA débiteur', ()=>{
 
 const baseValid={debtor_lastname:'ACME',debtor_post_street_1:'1 rue A',debtor_post_postalcode:'75001',debtor_post_city:'Paris',debtor_post_country_code:'FR',invoice_number:'F-001',invoice_date:'2024-01-01',invoice_due_date:'2024-02-01',amount_ttc:'100',invoice_total_amount_inc_vat:'100',invoice_open_amount_inc_vat:'100'};
 
-suite('Erreur: TVA créancier vide → message "requis"', ()=>{
-  const inv={data:{...baseValid,creditor_vat_number:null,debtor_vat_number:null},errors:{},debtorType:'particulier'};
-  checkFields(inv);
-  test('Message contient "requis"',        inv.errors.creditor_vat_number.includes('requis'), true);
-  test('Message contient un exemple',      inv.errors.creditor_vat_number.includes('FR12345678901'), true);
-  test('Message NE dit PAS "invalide"',    inv.errors.creditor_vat_number.includes('invalide'), false);
-});
-
-suite('Erreur: TVA créancier présente mais mauvais format → message "invalide"', ()=>{
-  const inv={data:{...baseValid,creditor_vat_number:'NOTAVAT',debtor_vat_number:null},errors:{},debtorType:'particulier'};
-  checkFields(inv);
-  test('Message contient "invalide"',      inv.errors.creditor_vat_number.includes('invalide'), true);
-  test('Message contient "code pays"',     inv.errors.creditor_vat_number.toLowerCase().includes('code pays'), true);
-  test('Message contient un exemple',      inv.errors.creditor_vat_number.includes('FR12345678901'), true);
-  test('Message NE dit PAS "requis"',      inv.errors.creditor_vat_number.includes('requis'), false);
-});
-
-suite('Erreur: TVA créancier chaîne "null" → message "requis"', ()=>{
-  const inv={data:{...baseValid,creditor_vat_number:'null',debtor_vat_number:null},errors:{},debtorType:'particulier'};
-  checkFields(inv);
-  test('Chaîne "null" traitée comme vide', inv.errors.creditor_vat_number.includes('requis'), true);
-});
-
-suite('Erreur: TVA débiteur invalide → message "invalide"', ()=>{
-  const inv={data:{...baseValid,creditor_vat_number:'FR12345678901',debtor_vat_number:'NOTAVAT'},errors:{},debtorType:null};
+suite('Erreur: TVA débiteur présente mais mauvais format → message "invalide"', ()=>{
+  const inv={data:{...baseValid,debtor_vat_number:'NOTAVAT'},errors:{},debtorType:null};
   checkFields(inv);
   test('Message débiteur contient "invalide"',   inv.errors.debtor_vat_number.includes('invalide'), true);
   test('Message débiteur contient "code pays"',  inv.errors.debtor_vat_number.toLowerCase().includes('code pays'), true);
+  test('Message NE dit PAS "requis"',            inv.errors.debtor_vat_number.includes('requis'), false);
 });
 
-suite('Erreur: TVA débiteur manquante pour entreprise → message "requis"', ()=>{
-  const inv={data:{...baseValid,creditor_vat_number:'FR12345678901',debtor_vat_number:null},errors:{},debtorType:'entreprise'};
-  checkFields(inv);
-  test('Message contient "requis"',         inv.errors.debtor_vat_number.includes('requis'), true);
-  test('Message contient "entreprise"',     inv.errors.debtor_vat_number.includes('entreprise'), true);
-  test('Message contient un exemple',       inv.errors.debtor_vat_number.includes('FR12345678901'), true);
-});
-
-suite('Erreur: TVA valide → aucune erreur', ()=>{
-  const inv={data:{...baseValid,creditor_vat_number:'FR12345678901',debtor_vat_number:null},errors:{},debtorType:'particulier'};
+suite('Erreur: TVA débiteur absente → aucune erreur (jamais requise)', ()=>{
+  const inv={data:{...baseValid,debtor_vat_number:null},errors:{},debtorType:'entreprise'};
   const ok=checkFields(inv);
-  test('Aucune erreur créancier',   inv.errors.creditor_vat_number, undefined);
+  test('Aucune erreur débiteur',    inv.errors.debtor_vat_number, undefined);
+  test('checkFields passe',         ok, true);
+});
+
+suite('Erreur: TVA débiteur valide → aucune erreur', ()=>{
+  const inv={data:{...baseValid,debtor_vat_number:'DE123456789'},errors:{},debtorType:'entreprise'};
+  const ok=checkFields(inv);
+  test('Aucune erreur débiteur',    inv.errors.debtor_vat_number, undefined);
   test('checkFields passe',         ok, true);
 });
 
 /* ══ SÉLECTEUR B2C/B2B TOUJOURS VISIBLE ════════════ */
 
-suite('Sélecteur type: toujours visible quelle que soit vatState', ()=>{
-  // La condition shouldShowDebtorTypeSelector est supprimée —
-  // les boutons doivent s'afficher pour tous les états de vatState
-  // On documente le nouveau comportement attendu (toujours true)
-  test('vatState both → boutons visibles',          true, true);
-  test('vatState debtor_only → boutons visibles',   true, true);
-  test('vatState creditor_only → boutons visibles', true, true);
-  test('vatState none → boutons visibles',          true, true);
-  // Le type sélectionné doit rester mémorisé après changement de vatState
-  // (testé via getDebtorCodeState qui utilise debtorType)
-  const withBoth={...baseValid,creditor_vat_number:'FR12345678901',debtor_vat_number:'DE123456789'};
-  const s=getDebtorCodeState(withBoth,'particulier');
-  // B2C takes priority: generated code even if 2 VATs are stored
-  test('B2C prioritaire sur vatState both → code généré', s.code, generateDebtorCode(withBoth));
+suite('Sélecteur type: toujours visible, B2C prioritaire sur TVA débiteur stockée', ()=>{
+  // Le sélecteur de type débiteur est toujours affiché.
+  // B2C (particulier) génère toujours un code, même si une TVA débiteur est stockée.
+  const withDebtorVat={...baseValid,debtor_vat_number:'DE123456789'};
+  const b2c=getDebtorCodeState(withDebtorVat,'particulier');
+  test('B2C prioritaire → code généré malgré TVA stockée', b2c.code, generateDebtorCode(withDebtorVat));
+  const b2b=getDebtorCodeState(withDebtorVat,'entreprise');
+  test('B2B avec TVA → code = TVA débiteur',               b2b.code, 'DE123456789');
 });
 
 /* ══ RISQUES: SETUP B2C/B2B GRISAGE ═════════════════ */
@@ -1218,32 +995,28 @@ suite('Risque 2: B2B→B2C→B2B — TVA débiteur conservée', ()=>{
   test('B2B avec TVA récupérée : valide',              checkFields(inv), true);
 });
 
-suite('Risque 3: clic B2C alors que Claude a détecté 2 TVA valides', ()=>{
+suite('Risque 3: clic B2C alors que Claude a détecté une TVA débiteur valide', ()=>{
   // Clic B2C grise le champ mais ne l'efface pas → pas de perte de données
-  const inv={data:{...baseOK,creditor_vat_number:'FR12345678901',debtor_vat_number:'DE123456789'},errors:{},debtorType:null};
+  const inv={data:{...baseOK,debtor_vat_number:'DE123456789'},errors:{},debtorType:null};
   simulateSetDebtorType(inv,'particulier');
   test('Click B2C : debtor_vat préservé (pas de perte)', inv.data.debtor_vat_number, 'DE123456789');
-  test('vatState reste both (valeur toujours là)',        resolveVATAssignment(inv.data.creditor_vat_number,inv.data.debtor_vat_number), 'both');
   // Pour B2C, debtorType pilote la logique — le code doit être généré même si la TVA est stockée
   test('debtor_code B2C → code généré (via debtorType)', getDebtorCodeState(inv.data,'particulier').code, generateDebtorCode(inv.data));
 });
 
-suite('Risque 4: switch + B2C — créancier devient null', ()=>{
-  // Scénario : créancier=FR, débiteur=null → switch → créancier=null, débiteur=FR → B2C
-  // B2C ne vide plus le débiteur, mais le créancier est null → checkFields bloque
-  const inv={data:{...baseOK,creditor_vat_number:'FR12345678901',debtor_vat_number:null},errors:{},debtorType:null};
-  switchVATValues(inv.data); // créancier=null, débiteur=FR12345678901
-  simulateSetDebtorType(inv,'particulier'); // grise le champ, ne l'efface pas
-  test('Après switch+B2C : créancier null',           inv.data.creditor_vat_number, null);
-  test('Après switch+B2C : débiteur préservé',        inv.data.debtor_vat_number,   'FR12345678901');
-  // checkFields bloque sur créancier manquant
+suite('Risque 4: B2C avec TVA débiteur stockée → code généré, validation OK', ()=>{
+  // B2C ne vide plus le débiteur ; le code débiteur reste généré et la validation passe.
+  const inv={data:{...baseOK,debtor_vat_number:'DE123456789'},errors:{},debtorType:null};
+  simulateSetDebtorType(inv,'particulier');
+  test('B2C : débiteur préservé',                     inv.data.debtor_vat_number, 'DE123456789');
   const ok=checkFields(inv);
-  test('checkFields bloque : créancier manquant',     ok, false);
-  test('Erreur sur créancier',                        !!inv.errors.creditor_vat_number, true);
+  test('checkFields passe',                           ok, true);
+  test('Aucune erreur débiteur (B2C)',                inv.errors.debtor_vat_number, undefined);
+  test('debtor_code = code généré',                   getDebtorCodeState(inv.data,'particulier').code, generateDebtorCode(inv.data));
 });
 
 suite('Risque 5: idempotence checkFields avec debtor_vat résiduel B2C', ()=>{
-  const inv={data:{...baseOK,creditor_vat_number:'FR12345678901',debtor_vat_number:'DE123456789'},errors:{},debtorType:'particulier'};
+  const inv={data:{...baseOK,debtor_vat_number:'DE123456789'},errors:{},debtorType:'particulier'};
   checkFields(inv); // premier appel : doit ignorer debtor_vat et passer
   const vatAfter1=inv.data.debtor_vat_number;
   const errAfter1=JSON.stringify(inv.errors);
@@ -1320,19 +1093,20 @@ suite('Simulation: B2B (TVA connue) → clic B2C → reclic B2B → CSV', ()=>{
 
 /* ══ CSV COLUMN ORDER — debtor_vat never exported ═══ */
 
-suite('CSV: administration_code = creditor_vat_number', ()=>{
+suite('CSV: administration_code — colonne conservée mais toujours vide', ()=>{
   const base={debtor_lastname:'Test SA',debtor_post_street_1:'1 rue Test',debtor_post_postalcode:'75001',debtor_post_city:'Paris',debtor_post_country_code:'FR',invoice_number:'F-001',invoice_date:'2024-01-01',invoice_due_date:'2024-02-01',invoice_total_amount_inc_vat:'100',invoice_open_amount_inc_vat:'100'};
-  const inv={data:{...base,creditor_vat_number:'FR12345678901',debtor_code:'DE123456789'},debtorType:'entreprise',status:'validated'};
-  const {exportFields,rows}=simulateBuildCSV([inv]);
+  const inv={data:{...base,debtor_vat_number:'DE123456789',debtor_code:'DE123456789'},debtorType:'entreprise',status:'validated'};
+  const {exportFields,header,rows}=simulateBuildCSV([inv]);
   const adminIdx=exportFields.findIndex(f=>f.key==='administration_code');
   const row=rows[0].split(';');
-  test('Colonne administration_code présente',           adminIdx>=0, true);
-  test('administration_code = creditor_vat_number',     row[adminIdx], 'FR12345678901');
-  // No creditor VAT
-  const inv2={data:{...base,creditor_vat_number:null,debtor_code:'TESPAR1R750'},debtorType:'particulier',status:'validated'};
+  test('Colonne administration_code présente (position 1)', adminIdx, 0);
+  test('Header commence par administration_code',           header.startsWith('administration_code'), true);
+  test('administration_code toujours vide (B2B)',           row[adminIdx], '');
+  // Aucun créancier : toujours vide aussi
+  const inv2={data:{...base,debtor_vat_number:null,debtor_code:'TESPAR1R750'},debtorType:'particulier',status:'validated'};
   const {exportFields:ef2,rows:rows2}=simulateBuildCSV([inv2]);
   const adminIdx2=ef2.findIndex(f=>f.key==='administration_code');
-  test('administration_code vide si créancier null',    rows2[0].split(';')[adminIdx2], '');
+  test('administration_code toujours vide (B2C)',           rows2[0].split(';')[adminIdx2], '');
 });
 
 suite('CSV: N° TVA débiteur jamais dans le CSV — Code débiteur en position fixe', ()=>{
@@ -1360,7 +1134,8 @@ suite('CSV: N° TVA débiteur jamais dans le CSV — Code débiteur en position 
 
 // Shared base for bug tests (also used by later suites)
 const bugBase={debtor_lastname:'Test SA',debtor_post_street_1:'1 rue Test',debtor_post_postalcode:'75001',debtor_post_city:'Paris',debtor_post_country_code:'FR',invoice_number:'F-999',invoice_date:'2024-01-01',invoice_due_date:'2024-02-01',amount_ttc:'100',invoice_total_amount_inc_vat:'100',invoice_open_amount_inc_vat:'100'};
-function bugInv(vat){return{data:{...bugBase,creditor_vat_number:vat,debtor_vat_number:null},errors:{},debtorType:'particulier'};}
+// La TVA débiteur est validée (format uniquement) pour une entreprise → réutilise ces suites de format.
+function bugInv(vat){return{data:{...bugBase,debtor_vat_number:vat},errors:{},debtorType:'entreprise'};}
 
 suite('Bug: FR123456789 (11 chars) rejeté — format FR requiert 13 chars', ()=>{
   // User entered FR + 9 digits = 11 chars.
@@ -1374,11 +1149,11 @@ suite('Bug: FR123456789 (11 chars) rejeté — format FR requiert 13 chars', ()=
   // Current error message is generic — does not say "13 chars expected"
   const inv=bugInv('FR123456789');
   checkFields(inv);
-  test('Erreur générée',                              !!inv.errors.creditor_vat_number, true);
-  test('Message contient "invalide"',                 inv.errors.creditor_vat_number.includes('invalide'), true);
+  test('Erreur générée',                              !!inv.errors.debtor_vat_number, true);
+  test('Message contient "invalide"',                 inv.errors.debtor_vat_number.includes('invalide'), true);
   // The message should ideally explain the exact format for FR
   // → fix: add country-specific hint when the country prefix is recognised
-  test('TODO: message explique format FR attendu',    inv.errors.creditor_vat_number.includes('FR'), true);
+  test('TODO: message explique format FR attendu',    inv.errors.debtor_vat_number.includes('FR'), true);
 });
 
 /* ══ BUG: TVA CRÉANCIER VALIDE REJETÉE ══════════════ */
@@ -1402,7 +1177,7 @@ suite('Bug: formats valides standard → checkFields passe', ()=>{
   clean.forEach(([label,val])=>{
     const inv=bugInv(val);
     test(`${label}: checkFields passe`,         checkFields(inv), true);
-    test(`${label}: aucune erreur créancier`,    inv.errors.creditor_vat_number, undefined);
+    test(`${label}: aucune erreur débiteur`,    inv.errors.debtor_vat_number, undefined);
   });
 });
 
@@ -1422,7 +1197,7 @@ suite('Bug: formats valides avec séparateurs communs → checkFields passe', ()
   withSep.forEach(([label,val])=>{
     const inv=bugInv(val);
     test(`${label}: checkFields passe`,         checkFields(inv), true);
-    test(`${label}: aucune erreur créancier`,    inv.errors.creditor_vat_number, undefined);
+    test(`${label}: aucune erreur débiteur`,    inv.errors.debtor_vat_number, undefined);
   });
 });
 
@@ -1438,7 +1213,7 @@ suite('Bug: formats avec séparateurs NON strippés → invalides', ()=>{
     test(`${label}: normalizeVAT → null (/ non strippé)`, normalizeVAT(val), null);
     const inv=bugInv(val);
     checkFields(inv);
-    test(`${label}: erreur "invalide" (non "requis")`, inv.errors.creditor_vat_number?.includes('invalide'), true);
+    test(`${label}: erreur "invalide" (non "requis")`, inv.errors.debtor_vat_number?.includes('invalide'), true);
   });
 });
 
@@ -1456,14 +1231,14 @@ suite('Bug: confusions de format fréquentes', ()=>{
 suite('Bug: checkFields message "invalide" vs "requis" selon le contenu', ()=>{
   // Non-empty but invalid → "invalide"
   const inv1=bugInv('NOTAVAT');checkFields(inv1);
-  test('Non-vide invalide → message "invalide"',         inv1.errors.creditor_vat_number?.includes('invalide'),true);
-  test('Non-vide invalide → pas "requis"',               inv1.errors.creditor_vat_number?.includes('requis'), false);
+  test('Non-vide invalide → message "invalide"',         inv1.errors.debtor_vat_number?.includes('invalide'),true);
+  test('Non-vide invalide → pas "requis"',               inv1.errors.debtor_vat_number?.includes('requis'), false);
   // Slash → not stripped → "invalide"
   const inv2=bugInv('FR/12345678901');checkFields(inv2);
-  test('Slash non strippé → message "invalide"',         inv2.errors.creditor_vat_number?.includes('invalide'),true);
+  test('Slash non strippé → message "invalide"',         inv2.errors.debtor_vat_number?.includes('invalide'),true);
   // CH (missing E) → "invalide"
   const inv3=bugInv('CH123456789');checkFields(inv3);
-  test('CH sans E → message "invalide"',                 inv3.errors.creditor_vat_number?.includes('invalide'),true);
+  test('CH sans E → message "invalide"',                 inv3.errors.debtor_vat_number?.includes('invalide'),true);
 });
 
 /* ══ MESSAGES D'ERREUR TVA SPÉCIFIQUES AU PAYS ═══════ */
@@ -1497,7 +1272,7 @@ suite('Message TVA: préfixe inconnu → hint null', ()=>{
   test('XX inconnu',            getVATHint('XX12345'),    null);
 });
 
-suite('Message TVA: checkFields utilise hint pays pour créancier', ()=>{
+suite('Message TVA: checkFields utilise hint pays pour débiteur (préfixe reconnu)', ()=>{
   // With hint implemented: error message should mention the country example
   const cases=[
     ['FR123456789',  'FR12345678901'],
@@ -1509,12 +1284,12 @@ suite('Message TVA: checkFields utilise hint pays pour créancier', ()=>{
     const inv=bugInv(input);
     checkFields(inv);
     test(`"${input}" → erreur mentionne exemple "${example}"`,
-      inv.errors.creditor_vat_number?.includes(example), true);
+      inv.errors.debtor_vat_number?.includes(example), true);
   });
 });
 
 suite('Message TVA: checkFields utilise hint pays pour débiteur', ()=>{
-  const inv={data:{...bugBase,creditor_vat_number:'FR12345678901',debtor_vat_number:'DE12345'},errors:{},debtorType:null};
+  const inv={data:{...bugBase,debtor_vat_number:'DE12345'},errors:{},debtorType:'entreprise'};
   checkFields(inv);
   test('Débiteur DE court → erreur mentionne DE123456789',
     inv.errors.debtor_vat_number?.includes('DE123456789'), true);
@@ -1524,7 +1299,7 @@ suite('Message TVA: préfixe inconnu → message générique', ()=>{
   const inv=bugInv('NOTAVAT');
   checkFields(inv);
   test('Préfixe inconnu → message générique',
-    inv.errors.creditor_vat_number?.includes('FR12345678901'), true);
+    inv.errors.debtor_vat_number?.includes('FR12345678901'), true);
 });
 
 suite('Upload limits — batch (max 20 par envoi)', ()=>{
