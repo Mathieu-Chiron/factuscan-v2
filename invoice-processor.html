@@ -656,7 +656,7 @@ function vandn(value, f, ctx) {
   if (f.type==='number') {
     norm=normalizeAmount(value);
     if (norm==null) errs.push(`Montant non reconnu : "${value}"`);
-    else { if(ctx!=='line'&&norm<0) errs.push('Montant négatif'); if(norm>10_000_000) errs.push('Montant > 10M€'); }
+    else { if(ctx!=='line'&&ctx!=='avoir'&&norm<0) errs.push('Montant négatif'); if(Math.abs(norm)>10_000_000) errs.push('Montant > 10M€'); }
   }
   if (f.type==='text'&&String(value).length>500) errs.push('Valeur trop longue');
   if (f.type==='email') {
@@ -1081,6 +1081,10 @@ function renderFieldsUI(inv) {
   const groupInvoice=document.createElement('div');groupInvoice.className='field-group';
   groupInvoice.innerHTML='<div class="field-group-title">Facture</div>';
 
+  // Avoir : total négatif → le suspens suit le total (champ désactivé), pas de paiement partiel
+  const isAvoir=(parseFloat(inv.data.invoice_total_amount_inc_vat)||0)<0;
+  if(isAvoir&&inv.data.invoice_total_amount_inc_vat!=null) inv.data.invoice_open_amount_inc_vat=inv.data.invoice_total_amount_inc_vat;
+
   S.fields.forEach(f=>{
     const raw=inv.data[f.key],val=raw!=null?String(raw):'';
     const err=inv.errors?.[f.key],wasNorm=inv.rawNorm?.[f.key]===true;
@@ -1088,6 +1092,10 @@ function renderFieldsUI(inv) {
     const isCountry=f.key==='debtor_post_country_code';
     const displayVal=isCountry&&val===''&&inv.status!=='pending'?'FR':val;
     if(isCountry&&displayVal==='FR'&&!inv.data[f.key]) inv.data[f.key]='FR';
+    const isOpenFld=f.key==='invoice_open_amount_inc_vat', isTotalFld=f.key==='invoice_total_amount_inc_vat';
+    const avoirOpen=isAvoir&&isOpenFld;
+    const fldDisabled=locked||avoirOpen;
+    const fldVal=avoirOpen?String(inv.data.invoice_total_amount_inc_vat??''):val;
     const row=document.createElement('div');row.className='field-row';
     const inputClass=`field-input${err?' empty':isEmpty?' empty':wasNorm?' normd':''}`;
     row.innerHTML=`
@@ -1103,13 +1111,15 @@ function renderFieldsUI(inv) {
         <div class="country-drop" id="countryDrop"></div>
       </div>`:`<input class="${inputClass}"
         type="${f.type==='number'?'number':f.type==='date'?'date':f.type==='email'?'email':'text'}"
-        id="fi_${f.key}" value="${esc(val)}"
+        id="fi_${f.key}" value="${esc(fldVal)}"
         placeholder="${f.required?'Requis':'Optionnel'}"
-        ${locked?'disabled':''}
-        oninput="onFI('${f.key}',this.value)"
+        ${fldDisabled?'disabled':''}
+        oninput="onFI('${f.key}',this.value)"${isTotalFld?` onchange="onTotalBlur(${isAvoir})"`:''}
       />`}
       ${err?`<div class="field-err" style="color:var(--amber-text);">${esc(err)}</div>`:''}
       ${wasNorm&&!err?'<div class="field-hint">Normalisée automatiquement</div>':''}
+      ${isAvoir&&isTotalFld?'<div class="field-hint">Avoir — facture à montant négatif</div>':''}
+      ${avoirOpen?'<div class="field-hint">Avoir — suspens = total</div>':''}
     `;
     if(GROUP_CREDITOR.includes(f.key)) groupCreditor.appendChild(row);
     else if(GROUP_DEBTOR.includes(f.key)) groupDebtor.appendChild(row);
@@ -1128,7 +1138,7 @@ function renderFieldsUI(inv) {
         onchange="inv_setAmountPaid(this.value)" oninput="inv_setAmountPaid(this.value)"/>
       <span style="font-size:13px;color:var(--muted);">€</span>
     </div>`;
-  groupInvoice.appendChild(amtRow);
+  if(!isAvoir) groupInvoice.appendChild(amtRow);
 
   // ── Entreprise cible ──
   const cur=inv.targetCompany;
@@ -1169,6 +1179,8 @@ function renderFieldsUI(inv) {
 }
 
 function applyAmountPaid(inv, value){
+  // Avoir (total négatif) : pas de paiement partiel — le suspens reste = total.
+  if((parseFloat(inv.data.invoice_total_amount_inc_vat)||0)<0){ inv.amountPaid=null; return; }
   const paid = parseFloat(value);
   // Freeze the original open amount on first use so we can always compute from it
   if(inv.baseOpenAmount == null){
@@ -1195,6 +1207,15 @@ function inv_setAmountPaid(value){
   // Update the open amount field in place without full re-render
   const openInput = document.getElementById('fi_invoice_open_amount_inc_vat');
   if(openInput) openInput.value = inv.data.invoice_open_amount_inc_vat;
+}
+
+// Re-render only when the total crosses the avoir boundary (normal ↔ négatif),
+// so normal edits don't steal focus on blur.
+function onTotalBlur(prevAvoir){
+  if(S.cur===-1) return;
+  const inv = S.invoices[S.cur];
+  const nowAvoir = (parseFloat(inv.data.invoice_total_amount_inc_vat)||0) < 0;
+  if(nowAvoir !== prevAvoir) renderFieldsUI(inv);
 }
 
 function renderDebtorSection(inv,container){
@@ -1373,8 +1394,13 @@ JSON uniquement.`;
 /* ══ VALIDATE / SKIP / RE-EXTRACT ════════════════════ */
 function checkFields(inv){
   inv.errors={};let ok=true;
+  // Avoir : un Montant total négatif = avoir. On force le suspens = total (les deux négatifs)
+  // et on autorise les montants négatifs (ctx='avoir'). Une facture normale garde open ≥ 0.
+  const totalNorm=normalizeAmount(inv.data.invoice_total_amount_inc_vat);
+  const isAvoir=totalNorm!=null&&totalNorm<0;
+  if(isAvoir){ inv.data.invoice_open_amount_inc_vat=totalNorm; inv.amountPaid=null; inv.baseOpenAmount=null; }
   S.fields.forEach(f=>{
-    const v=inv.data[f.key],res=vandn(v,f);
+    const v=inv.data[f.key],res=vandn(v,f,isAvoir?'avoir':undefined);
     if(!res.valid){inv.errors[f.key]=res.errs[0];ok=false;}
     else if(res.norm!==v&&res.norm!=null) inv.data[f.key]=res.norm;
   });
@@ -2121,6 +2147,7 @@ function renderPaytEditTable(){
     const k=adminId+'__'+inv.invoice_number;
     const openAmt=parseFloat(inv.book_open_amount||inv.open_amount)||0;
     const totalAmt=parseFloat(inv.book_total_amount||inv.total_amount)||0;
+    const isAvoirRow=totalAmt<0;  // un avoir n'a pas de statut de paiement (Payée/Clôturée)
     const state=_editState[k]||{status:'En cours',amountPaid:'',paymentDate:today};
     const changed=state.status!=='En cours';
 
@@ -2152,6 +2179,12 @@ function renderPaytEditTable(){
       tdSel.appendChild(badge);
       tdAmt.textContent=state.amountPaid?parseFloat(state.amountPaid).toFixed(2):'—';
       tdDate.textContent=state.paymentDate||'—';
+    }else if(isAvoirRow){
+      // Avoir (montant négatif) : pas de statut de paiement — lecture seule
+      const badge=document.createElement('span');
+      badge.textContent='Avoir'; badge.style.cssText='font-size:12px;font-weight:600;color:#8a5a00;';
+      tdSel.appendChild(badge);
+      tdAmt.textContent='—'; tdDate.textContent='—';
     }else{
       // status select
       const sel=document.createElement('select');

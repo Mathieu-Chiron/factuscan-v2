@@ -174,19 +174,23 @@ export default async function handler(req, res) {
     const payload = {
       administration_id: administrationId,
       invoices: batch.map(inv => {
-        // effectiveOpen is already reduced by amountPaid by the frontend (applyAmountPaid).
-        // Send it directly — PAYT will show the invoice as partially paid.
-        const effectiveOpen = Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0);
+        const total = parseFloat(inv.invoice_total_amount_inc_vat) || 0;
+        const isAvoir = total < 0;
+        // Avoir (total négatif) : open transmis tel quel (négatif = total) → PAYT crée une facture d'avoir.
+        // Facture normale : open déjà réduit par le frontend (applyAmountPaid), clampé ≥ 0.
+        const rawOpen = parseFloat(inv.invoice_open_amount_inc_vat) || 0;
+        const effectiveOpen = isAvoir ? rawOpen : Math.max(0, rawOpen);
         return {
           debtor_number:     inv.debtor_number,
           invoice_number:    inv.invoice_number,
           invoice_date:      inv.invoice_date,
           due_date:          inv.invoice_due_date,
-          book_amount_total: String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
-          amount_total:      String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
+          book_amount_total: String(total),
+          amount_total:      String(total),
           book_amount_open:  String(effectiveOpen),
           amount_open:       String(effectiveOpen),
           currency_code:     inv.currency_code || 'EUR',
+          ...(isAvoir && { sent_at: new Date().toISOString() }),
           ...(inv.creditor_name && { category: inv.creditor_name }),
         };
       }),
@@ -213,7 +217,9 @@ export default async function handler(req, res) {
 
         // ── Step 4: credit notes for "Clôturée" invoices ──
         const clotureeeBatch = batch.filter(inv =>
-          inv.payt_status === 'Clôturée' && !results[inv.invoice_number].errors.length
+          inv.payt_status === 'Clôturée'
+          && (parseFloat(inv.invoice_total_amount_inc_vat) || 0) >= 0  // un avoir (total négatif) ne déclenche pas de write-off
+          && !results[inv.invoice_number].errors.length
         );
         console.log(`[payt-push ${ts()}] cloturee batch size: ${clotureeeBatch.length}`);
 

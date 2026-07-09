@@ -91,7 +91,7 @@ function parseJSON(raw) {
   }
 }
 
-function vandn(value, f) {
+function vandn(value, f, ctx) {
   const errs=[], empty=value==null||String(value).trim()==='';
   if (f.required&&empty) return {valid:false,norm:value,errs:['Champ requis']};
   if (empty) return {valid:true,norm:value,errs:[]};
@@ -104,7 +104,7 @@ function vandn(value, f) {
   if (f.type==='number') {
     norm=normalizeAmount(value);
     if (norm==null) errs.push(`Montant non reconnu : "${value}"`);
-    else { if(norm<0) errs.push('Montant négatif'); if(norm>10_000_000) errs.push('Montant > 10M€'); }
+    else { if(ctx!=='line'&&ctx!=='avoir'&&norm<0) errs.push('Montant négatif'); if(Math.abs(norm)>10_000_000) errs.push('Montant > 10M€'); }
   }
   if (f.type==='text'&&String(value).length>500) errs.push('Valeur trop longue');
   return {valid:errs.length===0,norm:norm??value,errs};
