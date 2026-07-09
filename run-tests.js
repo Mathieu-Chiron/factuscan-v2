@@ -45,13 +45,13 @@ function parseJSON(raw) {
 function isValidEmail(str){return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(str));}
 function isValidCountryCode(str){return /^[A-Z]{2}$/.test(String(str));}
 
-function vandn(value, f) {
+function vandn(value, f, ctx) {
   const errs=[], empty=value==null||String(value).trim()==='';
   if (f.required&&empty) return {valid:false,norm:value,errs:['Champ requis']};
   if (empty) return {valid:true,norm:value,errs:[]};
   let norm=value;
   if (f.type==='date') { norm=normalizeDate(value); if (!norm) errs.push(`Date non reconnue : "${value}"`); else { const d=new Date(norm); if(isNaN(d.getTime())) errs.push('Date invalide'); if(d.getFullYear()<2000||d.getFullYear()>2099) errs.push('Année hors plage'); } }
-  if (f.type==='number') { norm=normalizeAmount(value); if (norm==null) errs.push(`Montant non reconnu : "${value}"`); else { if(norm<0) errs.push('Montant négatif'); if(norm>10_000_000) errs.push('Montant > 10M€'); } }
+  if (f.type==='number') { norm=normalizeAmount(value); if (norm==null) errs.push(`Montant non reconnu : "${value}"`); else { if(ctx!=='line'&&ctx!=='avoir'&&norm<0) errs.push('Montant négatif'); if(Math.abs(norm)>10_000_000) errs.push('Montant > 10M€'); } }
   if (f.type==='text'&&String(value).length>500) errs.push('Valeur trop longue');
   if (f.type==='email') {
     norm=String(value).trim().toLowerCase();
@@ -80,7 +80,12 @@ const FIELDS = [
 
 function checkFields(inv) {
   inv.errors={}; let ok=true;
-  FIELDS.forEach(f=>{ const v=inv.data[f.key],res=vandn(v,f); if(!res.valid){inv.errors[f.key]=res.errs[0];ok=false;} else if(res.norm!==v&&res.norm!=null) inv.data[f.key]=res.norm; });
+  // Avoir : un Montant total négatif = avoir. On force le suspens = total (les deux négatifs)
+  // et on autorise les montants négatifs (ctx='avoir'). Une facture normale garde open ≥ 0.
+  const totalNorm=normalizeAmount(inv.data.invoice_total_amount_inc_vat);
+  const isAvoir=totalNorm!=null&&totalNorm<0;
+  if(isAvoir){ inv.data.invoice_open_amount_inc_vat=totalNorm; inv.amountPaid=null; inv.baseOpenAmount=null; }
+  FIELDS.forEach(f=>{ const v=inv.data[f.key],res=vandn(v,f,isAvoir?'avoir':undefined); if(!res.valid){inv.errors[f.key]=res.errs[0];ok=false;} else if(res.norm!==v&&res.norm!=null) inv.data[f.key]=res.norm; });
   // Normalize invoice_number to "YYYY-NNNNN"
   if(inv.data.invoice_number) inv.data.invoice_number=`${fmtDate(inv.data.invoice_date)}-${fmtInvref(inv.data.invoice_number)}`;
   // TVA débiteur : facultative. Si présente (et non B2C), on valide seulement le format ;
@@ -1587,16 +1592,21 @@ suite('applyAmountPaid — gel du baseOpenAmount', () => {
 /* ══ PAYT PUSH PAYLOAD — field mapping (api/payt-push.js) ══ */
 
 function buildApiPaytBody(inv) {
+  const total  = parseFloat(inv.invoice_total_amount_inc_vat) || 0;
+  const isAvoir = total < 0;
+  const rawOpen = parseFloat(inv.invoice_open_amount_inc_vat) || 0;
+  // Avoir : open négatif transmis tel quel. Facture normale : open clampé ≥ 0.
+  const open = isAvoir ? rawOpen : Math.max(0, rawOpen);
   return {
     debtor_number:     inv.debtor_number,
     invoice_number:    inv.invoice_number,
     invoice_date:      inv.invoice_date,
     due_date:          inv.invoice_due_date,
-    book_amount_total: String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
-    amount_total:      String(parseFloat(inv.invoice_total_amount_inc_vat) || 0),
-    book_amount_open:  String(Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0)),
-    amount_open:       String(Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0)),
-    ...(Math.max(0, parseFloat(inv.invoice_open_amount_inc_vat) || 0) === 0 && inv.amount_paid > 0 && {
+    book_amount_total: String(total),
+    amount_total:      String(total),
+    book_amount_open:  String(open),
+    amount_open:       String(open),
+    ...(open === 0 && inv.amount_paid > 0 && {
       payments: [{
         amount:            String(parseFloat(inv.amount_paid)),
         origin_identifier: `${inv.invoice_number}-writeoff`,
@@ -1621,6 +1631,52 @@ suite('api/payt-push.js — renommage des champs montants', () => {
   test('flow_code absent (supprimé)',                       body.flow_code,            undefined);
   const noCC = buildApiPaytBody({ ...inv, currency_code: undefined });
   test('currency_code par défaut "EUR"',                    noCC.currency_code,        'EUR');
+});
+
+/* ══ AVOIR — saisie directe d'un montant négatif ══ */
+// Un total négatif = avoir. open forcé = total (les deux négatifs). Poussé tel quel à PAYT.
+// Le write-off (Step 4) est ignoré pour un avoir (pas d'avoir-de-l'avoir).
+function writeoffEligible(inv){
+  return inv.payt_status === 'Clôturée' && (parseFloat(inv.invoice_total_amount_inc_vat) || 0) >= 0;
+}
+
+suite('Avoir: vandn — négatif accepté en contexte avoir, borne symétrique', () => {
+  test('négatif sans ctx → "Montant négatif"',      vandn(-100,{type:'number'}).errs.includes('Montant négatif'), true);
+  test('négatif sans ctx → invalide',               vandn(-100,{type:'number'}).valid, false);
+  test('négatif ctx=avoir → valide',                vandn(-100,{type:'number'},'avoir').valid, true);
+  test('négatif ctx=avoir → pas d\'erreur négatif', vandn(-100,{type:'number'},'avoir').errs.includes('Montant négatif'), false);
+  test('positif normal → valide',                   vandn(100,{type:'number'}).valid, true);
+  test('avoir -20M → borne "Montant > 10M€"',       vandn(-20000000,{type:'number'},'avoir').errs.includes('Montant > 10M€'), true);
+  test('normal +20M → borne "Montant > 10M€"',      vandn(20000000,{type:'number'}).errs.includes('Montant > 10M€'), true);
+});
+
+suite('Avoir: checkFields — total négatif accepté, open forcé = total', () => {
+  const inv={data:{...baseOK,invoice_total_amount_inc_vat:'-150',invoice_open_amount_inc_vat:'250'},errors:{},debtorType:'entreprise'};
+  const ok=checkFields(inv);
+  test('total négatif → validation OK',             ok, true);
+  test('open forcé = total (négatif)',              parseFloat(inv.data.invoice_open_amount_inc_vat), -150);
+  test('aucune erreur sur les montants',            inv.errors.invoice_total_amount_inc_vat||inv.errors.invoice_open_amount_inc_vat, undefined);
+});
+
+suite('Avoir: facture normale — open négatif toujours rejeté', () => {
+  const inv={data:{...baseOK,invoice_total_amount_inc_vat:'100',invoice_open_amount_inc_vat:'-5'},errors:{},debtorType:'entreprise'};
+  const ok=checkFields(inv);
+  test('total positif + open négatif → rejeté',     ok, false);
+  test('erreur "Montant négatif" sur open',         inv.errors.invoice_open_amount_inc_vat, 'Montant négatif');
+});
+
+suite('Avoir: payload push — open négatif non clampé', () => {
+  const avoir=buildApiPaytBody({debtor_number:'X',invoice_number:'AV-1',invoice_date:'2024-01-01',invoice_due_date:'2024-01-01',invoice_total_amount_inc_vat:'-150',invoice_open_amount_inc_vat:'-150'});
+  test('book_amount_total négatif',                 avoir.book_amount_total, '-150');
+  test('book_amount_open négatif (non clampé)',     avoir.book_amount_open, '-150');
+  test('amount_open négatif (non clampé)',          avoir.amount_open, '-150');
+  const normal=buildApiPaytBody({debtor_number:'X',invoice_number:'F-1',invoice_date:'2024-01-01',invoice_due_date:'2024-01-01',invoice_total_amount_inc_vat:'100',invoice_open_amount_inc_vat:'-5'});
+  test('facture normale: open négatif → clampé 0',  normal.book_amount_open, '0');
+});
+
+suite('Avoir: write-off (Step 4) ignoré pour un avoir', () => {
+  test('avoir Clôturée → write-off exclu',            writeoffEligible({payt_status:'Clôturée',invoice_total_amount_inc_vat:'-150'}), false);
+  test('facture normale Clôturée → write-off inclus', writeoffEligible({payt_status:'Clôturée',invoice_total_amount_inc_vat:'150'}), true);
 });
 
 suite('PAYT — montant réduit après applyAmountPaid transmis correctement', () => {
